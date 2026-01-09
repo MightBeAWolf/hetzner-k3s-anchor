@@ -68,6 +68,7 @@ resource "hcloud_firewall" "k3s_firewall" {
 
   rule {
     direction = "in"
+    port      = "any"
     protocol  = "tcp"
     source_ips = [
       "192.168.0.0/16"
@@ -76,6 +77,7 @@ resource "hcloud_firewall" "k3s_firewall" {
 
   rule {
     direction = "in"
+    port      = "any"
     protocol  = "udp"
     source_ips = [
       "192.168.0.0/16"

@@ -50,3 +50,17 @@ run = [
   "mise install",
   "mise run init"
 ]
+
+[tasks.ip]
+description = "Get public IP of specific node"
+usage = 'arg "<node_index>" help="Node index (0-2)" default="0"'
+dir = "tofu"
+run = 'tofu output -json node_public_ips | jq -r ".[${usage_node_index}]"'
+
+[tasks.replace-nodes]
+description = "Replace all nodes with updated cloud-init configuration"
+dir = "tofu"
+run = [
+  "op run -- tofu apply -replace=hcloud_server.k3s_nodes[0] -replace=hcloud_server.k3s_nodes[1] -replace=hcloud_server.k3s_nodes[2]",
+  "op run -- tofu apply -replace=hcloud_floating_ip_assignment.k3s_floating_ip_assignment"
+]

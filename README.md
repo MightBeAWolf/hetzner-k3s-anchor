@@ -131,7 +131,60 @@ op run -- tofu -chdir=tofu output node_private_ips
 
 # Get floating IP
 op run -- tofu -chdir=tofu output floating_ip
+
+# Get specific node IP by index (0-2)
+mise run ip 0  # node-01
+mise run ip 1  # node-02
+mise run ip 2  # node-03
 ```
+
+## Server Access
+
+### SSH into Nodes
+After infrastructure deployment, connect to any node using SSH:
+
+```bash
+# SSH into specific node by index
+ssh "root@$(mise run ip 0)"  # k3s-converged-node-01
+ssh "root@$(mise run ip 1)"  # k3s-converged-node-02
+ssh "root@$(mise run ip 2)"  # k3s-converged-node-03
+```
+
+**Connection Notes:**
+- SSH access only works from the configured admin IP (`73.97.54.81/32`)
+- Password authentication is disabled - uses SSH key authentication only
+- Default user is `root` on Debian 12 instances
+
+## Updating Cloud-Init Configuration
+
+When you modify `cloud-init.yaml`, the changes only apply to newly created servers. To apply cloud-init changes to existing infrastructure:
+
+### Option 1: Recreate All Servers (Recommended)
+```bash
+# Force recreation of all servers with new cloud-init
+mise run replace-nodes
+```
+
+**Note:** This task automatically reassigns the floating IP to the new node-01 after recreation.
+
+### Option 2: Manual Application
+If you need to apply specific changes without recreating servers:
+
+```bash
+# SSH into each node and apply changes manually
+ssh "root@$(mise run ip 0)"
+ssh "root@$(mise run ip 1)" 
+ssh "root@$(mise run ip 2)"
+
+# Example: Fix firewall zone configuration
+firewall-cmd --permanent --zone=public --add-interface=ens10
+firewall-cmd --reload
+```
+
+**Important Notes:**
+- Option 1 will cause downtime as servers are recreated
+- Option 2 requires manual verification on each node
+- Always test changes in a development environment first
 
 ## Next Steps
 

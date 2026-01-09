@@ -28,7 +28,7 @@ runcmd:
   - firewall-cmd --permanent --add-service=http
   - firewall-cmd --permanent --add-service=https
   - firewall-cmd --permanent --add-port=6443/tcp
-  - firewall-cmd --permanent --zone=trusted --add-interface=ens10
+  - firewall-cmd --permanent --zone=public --add-interface=ens10
   - firewall-cmd --reload
   
   # Enable and start fail2ban
