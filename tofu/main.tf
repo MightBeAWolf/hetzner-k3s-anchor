@@ -104,7 +104,9 @@ resource "hcloud_server" "k3s_nodes" {
 
   firewall_ids = [hcloud_firewall.k3s_firewall.id]
 
-  user_data = templatefile("${path.module}/cloud-init.yaml", {})
+  user_data = templatefile("${path.module}/cloud-init.yaml", {
+    path_module = path.module
+  })
 
   network {
     network_id = hcloud_network.k3s_network.id
