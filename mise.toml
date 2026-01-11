@@ -1,42 +1,59 @@
 [env]
-TF_VAR_hcloud_token = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
+HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
+TF_VAR_hcloud_token = "{{ env.HCLOUD_TOKEN }}"
 TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
 
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"
+"pipx" = "latest"
+"uv" = "latest"
+"pipx:ansible-core" = { version = "latest", uvx_args = "--with requests --with hcloud" }
 
-[tasks.init]
+# Setup tasks
+[tasks.setup]
+description = "Setup project dependencies and initialize"
+run = [
+  "mise install",
+  "mise run tofu:init",
+  "mise run ansible:setup"
+]
+
+# OpenTofu tasks
+[tasks."tofu:init"]
 description = "Initialize OpenTofu configuration"
 dir = "tofu"
 run = "op run -- tofu init"
 
-[tasks.plan]
+[tasks."tofu:plan"]
 description = "Plan OpenTofu infrastructure changes"
 dir = "tofu"
 run = "op run -- tofu plan"
 
-[tasks.apply]
+[tasks."tofu:apply"]
 description = "Apply OpenTofu infrastructure changes"
 dir = "tofu"
-run = "op run -- tofu apply"
+run = [
+  "rm -rf /tmp/ansible_facts",
+  "op run -- tofu apply"
+]
 
-[tasks.destroy]
+[tasks."tofu:destroy"]
 description = "Destroy OpenTofu infrastructure"
 dir = "tofu"
 run = "op run -- tofu destroy"
 
-[tasks.validate]
+[tasks."tofu:validate"]
 description = "Validate OpenTofu configuration"
 dir = "tofu"
 run = "op run -- tofu validate"
 
-[tasks.fmt]
+[tasks."tofu:fmt"]
 description = "Format OpenTofu files"
 dir = "tofu"
 run = "tofu fmt"
 
-[tasks.lint]
+[tasks."tofu:lint"]
 description = "Lint and format all code"
 dir = "tofu"
 run = [
@@ -44,23 +61,49 @@ run = [
   "op run -- tofu validate"
 ]
 
-[tasks.setup]
-description = "Setup project dependencies and initialize"
-run = [
-  "mise install",
-  "mise run init"
-]
-
-[tasks.ip]
+[tasks."tofu:ip"]
 description = "Get public IP of specific node"
 usage = 'arg "<node_index>" help="Node index (0-2)" default="0"'
 dir = "tofu"
 run = 'tofu output -json node_public_ips | jq -r ".[${usage_node_index}]"'
 
-[tasks.replace-nodes]
+[tasks."tofu:replace-nodes"]
 description = "Replace all nodes with updated cloud-init configuration"
 dir = "tofu"
 run = [
-  "op run -- tofu apply -replace=hcloud_server.k3s_nodes[0] -replace=hcloud_server.k3s_nodes[1] -replace=hcloud_server.k3s_nodes[2]",
-  "op run -- tofu apply -replace=hcloud_floating_ip_assignment.k3s_floating_ip_assignment"
+  "rm -rf /tmp/ansible_facts",
+  """
+  op run -- tofu apply \
+    -replace=hcloud_server.k3s_nodes[0] \
+    -replace=hcloud_server.k3s_nodes[1] \
+    -replace=hcloud_server.k3s_nodes[2] \
+    -replace=hcloud_floating_ip_assignment.k3s_floating_ip_assignment
+  """
 ]
+
+# Ansible tasks
+[tasks."ansible:setup"]
+description = "Install Ansible collections and dependencies"
+dir = "ansible"
+run = "ansible-galaxy install -r requirements.yml"
+
+[tasks."ansible:inventory"]
+description = "List Ansible inventory from Hetzner Cloud"
+dir = "ansible"
+run = "op run -- ansible-inventory --list"
+
+[tasks."ansible:ping"]
+description = "Test Ansible connectivity to all hosts"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/ping.yml"
+
+[tasks."ansible:update-known-hosts"]
+description = "Update SSH known_hosts with current server fingerprints"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/update-known-hosts.yml"
+
+[tasks."ansible:run"]
+description = "Run an Ansible playbook"
+usage = 'arg "<playbook>" help="Path to playbook (e.g., playbooks/ping.yml)"'
+dir = "ansible"
+run = "op run -- ansible-playbook ${usage_playbook}"

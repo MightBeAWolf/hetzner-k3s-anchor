@@ -13,6 +13,12 @@ OpenTofu and Hetzner Cloud.
 │   ├── main.tf              # Infrastructure resources
 │   ├── cloud-init.yaml      # VM bootstrap configuration
 │   └── outputs.tf           # Output values
+├── ansible/                 # Ansible configuration management
+│   ├── ansible.cfg          # Ansible configuration
+│   ├── requirements.yml     # Ansible Galaxy dependencies
+│   ├── inventory/           # Dynamic inventory from Hetzner Cloud
+│   ├── playbooks/           # Ansible playbooks
+│   └── roles/               # Custom Ansible roles
 ├── mise.toml                # Development workflow tools
 ├── .pre-commit-config.yaml  # Code quality hooks
 ├── .yamllint.yaml           # YAML linting configuration
@@ -46,20 +52,26 @@ Environment variables are automatically configured via `mise.toml` and loaded th
 
 ### 3. Initialize Infrastructure
 ```bash
-# Setup project and initialize OpenTofu
+# Setup project (installs tools, initializes OpenTofu, installs Ansible collections)
 mise run setup
 
 # Review planned changes
-mise run plan
+mise run tofu:plan
 ```
+
+This will:
+- Install OpenTofu and Ansible via mise
+- Initialize OpenTofu backend
+- Install required Ansible collections (hetzner.hcloud, community.general, ansible.posix)
 
 ## Infrastructure Overview
 
 ### Resources Provisioned
 - **3x Hetzner Cloud Servers** (cx23, Debian 12)
   - `k3s-converged-node-01` (192.168.1.2)
-  - `k3s-converged-node-02` (192.168.1.3)  
+  - `k3s-converged-node-02` (192.168.1.3)
   - `k3s-converged-node-03` (192.168.1.4)
+  - Labeled: `project=anchor`, `environment=production`, `role=k3s-node`
 - **Private Network** (192.168.0.0/16)
 - **Floating IP** (for HA, managed by kube-vip)
 - **Cloud Firewall** (restricted access)
@@ -80,24 +92,44 @@ mise run plan
 
 ### Deploy Infrastructure
 ```bash
-# Deploy all resources
-mise run apply
+# Deploy all resources (SSH known_hosts updated automatically)
+mise run tofu:apply
+
+# Test Ansible connectivity
+mise run ansible:ping
 ```
 
 ### Manage Infrastructure
 ```bash
 # Validate configuration
-mise run validate
+mise run tofu:validate
 
 # Format code
-mise run fmt
+mise run tofu:fmt
 
 # Lint and validate
-mise run lint
+mise run tofu:lint
 
 # Destroy infrastructure
-mise run destroy
+mise run tofu:destroy
 ```
+
+### Ansible Configuration Management
+```bash
+# View dynamic inventory from Hetzner Cloud
+mise run ansible:inventory
+
+# Run connectivity test
+mise run ansible:ping
+
+# Update SSH known_hosts
+mise run ansible:update-known-hosts
+
+# Run a custom playbook
+mise run ansible:run playbooks/your-playbook.yml
+```
+
+See [ansible/README.md](ansible/README.md) for detailed Ansible documentation.
 
 ### Development Workflow
 ```bash
@@ -126,16 +158,19 @@ After deployment, retrieve connection details:
 # Get node public IPs
 op run -- tofu -chdir=tofu output node_public_ips
 
-# Get node private IPs  
+# Get node private IPs
 op run -- tofu -chdir=tofu output node_private_ips
 
 # Get floating IP
 op run -- tofu -chdir=tofu output floating_ip
 
 # Get specific node IP by index (0-2)
-mise run ip 0  # node-01
-mise run ip 1  # node-02
-mise run ip 2  # node-03
+mise run tofu:ip 0  # node-01
+mise run tofu:ip 1  # node-02
+mise run tofu:ip 2  # node-03
+
+# Or use Ansible inventory
+mise run ansible:inventory
 ```
 
 ## Server Access
@@ -145,15 +180,16 @@ After infrastructure deployment, connect to any node using SSH:
 
 ```bash
 # SSH into specific node by index
-ssh "root@$(mise run ip 0)"  # k3s-converged-node-01
-ssh "root@$(mise run ip 1)"  # k3s-converged-node-02
-ssh "root@$(mise run ip 2)"  # k3s-converged-node-03
+ssh "root@$(mise run tofu:ip 0)"  # k3s-converged-node-01
+ssh "root@$(mise run tofu:ip 1)"  # k3s-converged-node-02
+ssh "root@$(mise run tofu:ip 2)"  # k3s-converged-node-03
 ```
 
 **Connection Notes:**
 - SSH access only works from the configured admin IP (`73.97.54.81/32`)
-- Password authentication is disabled - uses SSH key authentication only
+- SSH authentication uses 1Password SSH agent (no private key files)
 - Default user is `root` on Debian 12 instances
+- SSH fingerprints are automatically updated in `~/.ssh/known_hosts` when infrastructure changes
 
 ## Updating Cloud-Init Configuration
 
@@ -162,19 +198,34 @@ When you modify `cloud-init.yaml`, the changes only apply to newly created serve
 ### Option 1: Recreate All Servers (Recommended)
 ```bash
 # Force recreation of all servers with new cloud-init
-mise run replace-nodes
+mise run tofu:replace-nodes
+
+# Verify connectivity
+mise run ansible:ping
 ```
 
-**Note:** This task automatically reassigns the floating IP to the new node-01 after recreation.
+**Note:** This task automatically:
+- Clears Ansible fact cache
+- Recreates all three servers
+- Reassigns the floating IP to the new node-01
+- Updates SSH fingerprints in ~/.ssh/known_hosts
 
-### Option 2: Manual Application
+### Option 2: Use Ansible for Configuration Changes
+For runtime configuration changes without server recreation:
+
+```bash
+# Create a playbook in ansible/playbooks/ and run it
+mise run ansible:run playbooks/your-config-changes.yml
+```
+
+### Option 3: Manual Application
 If you need to apply specific changes without recreating servers:
 
 ```bash
 # SSH into each node and apply changes manually
-ssh "root@$(mise run ip 0)"
-ssh "root@$(mise run ip 1)" 
-ssh "root@$(mise run ip 2)"
+ssh "root@$(mise run tofu:ip 0)"
+ssh "root@$(mise run tofu:ip 1)"
+ssh "root@$(mise run tofu:ip 2)"
 
 # Example: Fix firewall zone configuration
 firewall-cmd --permanent --zone=public --add-interface=ens10
@@ -183,7 +234,8 @@ firewall-cmd --reload
 
 **Important Notes:**
 - Option 1 will cause downtime as servers are recreated
-- Option 2 requires manual verification on each node
+- Option 2 is preferred for runtime configuration management
+- Option 3 requires manual verification on each node
 - Always test changes in a development environment first
 
 ## Next Steps

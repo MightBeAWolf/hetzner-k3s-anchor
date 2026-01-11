@@ -104,6 +104,13 @@ resource "hcloud_server" "k3s_nodes" {
 
   firewall_ids = [hcloud_firewall.k3s_firewall.id]
 
+  labels = {
+    project     = "anchor"
+    environment = "production"
+    role        = "k3s-node"
+    node_index  = tostring(count.index)
+  }
+
   user_data = templatefile("${path.module}/cloud-init.yaml", {
     path_module = path.module
   })
@@ -124,4 +131,33 @@ resource "hcloud_floating_ip_assignment" "k3s_floating_ip_assignment" {
   lifecycle {
     ignore_changes = [server_id]
   }
+}
+
+# Update SSH known_hosts on local workstation when servers change
+resource "null_resource" "update_known_hosts" {
+  triggers = {
+    server_ids = join(",", hcloud_server.k3s_nodes[*].id)
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      for ip in ${join(" ", hcloud_server.k3s_nodes[*].ipv4_address)}; do
+        # Remove old key
+        ssh-keygen -R $ip 2>/dev/null || true
+
+        # Wait for SSH to be ready (max 60 seconds)
+        echo "Waiting for SSH on $ip..."
+        for i in {1..12}; do
+          if ssh-keyscan -H $ip 2>/dev/null | grep -q ssh; then
+            ssh-keyscan -H $ip >> ~/.ssh/known_hosts 2>/dev/null
+            echo "SSH key added for $ip"
+            break
+          fi
+          sleep 5
+        done
+      done
+    EOT
+  }
+
+  depends_on = [hcloud_server.k3s_nodes]
 }
