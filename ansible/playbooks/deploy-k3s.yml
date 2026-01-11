@@ -1,0 +1,255 @@
+---
+# Deploy K3s HA cluster with embedded etcd
+# Run with: mise run ansible:deploy-k3s
+
+- name: Pre-deployment - Fetch dynamic variables
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verify K3S_TOKEN is set
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'K3S_TOKEN') | length > 0
+        fail_msg: "K3S_TOKEN environment variable must be set. Generate with: openssl rand -hex 32"
+        success_msg: "K3S_TOKEN is configured"
+
+    - name: Fetch floating IP from Hetzner Cloud by label
+      hetzner.hcloud.floating_ip_info:
+        label_selector: "project=anchor,role=k3s-floating-ip"
+      register: hcloud_floating_ips
+      no_log: true
+
+    - name: Verify exactly one floating IP found
+      ansible.builtin.assert:
+        that:
+          - hcloud_floating_ips.hcloud_floating_ip_info | length == 1
+        fail_msg: "Expected exactly 1 floating IP with labels project=anchor,role=k3s-floating-ip, found {{ hcloud_floating_ips.hcloud_floating_ip_info | length }}"
+
+    - name: Set floating IP fact
+      ansible.builtin.set_fact:
+        k3s_floating_ip: "{{ hcloud_floating_ips.hcloud_floating_ip_info[0].ip }}"
+        cacheable: true
+
+    - name: Display deployment configuration
+      ansible.builtin.debug:
+        msg:
+          - "Floating IP: {{ k3s_floating_ip }}"
+          - "Ready to deploy K3s cluster"
+
+- name: Initialize K3s Cluster on First Node
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: true
+  vars:
+    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+
+  pre_tasks:
+    - name: Verify system requirements
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['memtotal_mb'] >= 1024
+          - ansible_facts['distribution'] == 'Debian'
+        fail_msg: "System does not meet minimum requirements (1GB RAM, Debian)"
+
+    - name: Check available disk space
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['mounts'] | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first > 5368709120
+        fail_msg: "Insufficient disk space (minimum 5GB free required)"
+
+  tasks:
+    - name: Check if K3s is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Download K3s installation script
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+      when: not k3s_binary.stat.exists
+
+    - name: Install K3s server (cluster init)
+      ansible.builtin.command:
+        cmd: >
+          /tmp/k3s-install.sh server
+          --cluster-init
+          --node-ip={{ hcloud_private_networks[0]['ip'] }}
+          --tls-san={{ k3s_floating_ip }}
+          --tls-san={{ hcloud_private_networks[0]['ip'] }}
+          --disable=servicelb
+          --disable=traefik
+          --write-kubeconfig-mode=0644
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"
+      when: not k3s_binary.stat.exists
+      no_log: true
+
+    - name: Wait for K3s to be ready
+      ansible.builtin.wait_for:
+        path: /etc/rancher/k3s/k3s.yaml
+        timeout: 120
+
+    - name: Wait for node to be ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=120s
+      changed_when: false
+      retries: 5
+      delay: 10
+      register: node_ready
+      until: node_ready is success
+
+    - name: Verify K3s service is running
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Clean up installation script
+      ansible.builtin.file:
+        path: /tmp/k3s-install.sh
+        state: absent
+
+- name: Join Additional Control Plane Nodes
+  hosts: k3s_nodes:!k3s-converged-node-01
+  become: true
+  gather_facts: true
+  serial: 1  # Join nodes one at a time
+  vars:
+    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+
+  pre_tasks:
+    - name: Verify system requirements
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['memtotal_mb'] >= 1024
+          - ansible_facts['distribution'] == 'Debian'
+        fail_msg: "System does not meet minimum requirements (1GB RAM, Debian)"
+
+    - name: Check available disk space
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['mounts'] | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first > 5368709120
+        fail_msg: "Insufficient disk space (minimum 5GB free required)"
+
+  tasks:
+    - name: Wait for first node to be ready
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[k3s_cluster_init_node]['hcloud_private_networks'][0]['ip'] }}"
+        port: 6443
+        timeout: 300
+
+    - name: Check if K3s is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Download K3s installation script
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+      when: not k3s_binary.stat.exists
+
+    - name: Check if node is already in cluster
+      ansible.builtin.command: k3s kubectl get node {{ inventory_hostname }}
+      register: node_in_cluster
+      changed_when: false
+      failed_when: false
+      delegate_to: "{{ k3s_cluster_init_node }}"
+
+    - name: Join as server node
+      ansible.builtin.command:
+        cmd: >
+          /tmp/k3s-install.sh server
+          --server https://{{ hostvars[k3s_cluster_init_node]['hcloud_private_networks'][0]['ip'] }}:6443
+          --node-ip={{ hcloud_private_networks[0]['ip'] }}
+          --tls-san={{ k3s_floating_ip }}
+          --disable=servicelb
+          --disable=traefik
+          --write-kubeconfig-mode=0644
+      environment:
+        INSTALL_K3S_VERSION: "{{ k3s_version }}"
+        K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"
+      when: node_in_cluster.rc != 0
+
+    - name: Wait for node to be ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=120s
+      changed_when: false
+      retries: 5
+      delay: 10
+      register: node_ready
+      until: node_ready is success
+      delegate_to: "{{ k3s_cluster_init_node }}"
+
+    - name: Verify K3s service is running
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Clean up installation script
+      ansible.builtin.file:
+        path: /tmp/k3s-install.sh
+        state: absent
+
+- name: Retrieve kubeconfig
+  hosts: k3s_nodes
+  become: true
+  gather_facts: false
+  run_once: true
+  vars:
+    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+  tasks:
+    - name: Fetch kubeconfig from first node
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: kubeconfig_content
+      when: inventory_hostname == k3s_cluster_init_node
+      no_log: true
+
+    - name: Save kubeconfig locally
+      ansible.builtin.copy:
+        content: "{{ kubeconfig_content.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + k3s_floating_ip + ':6443') }}"
+        dest: "{{ playbook_dir }}/../../kubeconfig"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      when: inventory_hostname == k3s_cluster_init_node
+      no_log: true
+
+    - name: Display cluster info
+      ansible.builtin.command: k3s kubectl get nodes -o wide
+      register: cluster_nodes
+      changed_when: false
+      when: inventory_hostname == k3s_cluster_init_node
+
+    - name: Show cluster status
+      ansible.builtin.debug:
+        msg: "{{ cluster_nodes.stdout_lines }}"
+      when: inventory_hostname == k3s_cluster_init_node
+
+- name: Post-deployment instructions
+  hosts: localhost
+  gather_facts: false
+  vars:
+    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+  tasks:
+    - name: Display kubeconfig instructions
+      ansible.builtin.debug:
+        msg: |
+          ✅ K3s cluster deployed successfully!
+
+          Kubeconfig saved to: kubeconfig
+          Floating IP: {{ k3s_floating_ip }}
+
+          Next steps:
+          1. Configure kubectl:
+             export KUBECONFIG=./kubeconfig
+
+          2. Verify cluster:
+             kubectl get nodes -o wide
+             kubectl cluster-info
+
+          3. Deploy your workloads!

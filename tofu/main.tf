@@ -22,6 +22,12 @@ resource "hcloud_floating_ip" "k3s_floating_ip" {
   type          = "ipv4"
   home_location = var.location
   name          = "k3s-floating-ip"
+
+  labels = {
+    project     = "anchor"
+    environment = "production"
+    role        = "k3s-floating-ip"
+  }
 }
 
 # Cloud Firewall

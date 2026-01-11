@@ -125,6 +125,9 @@ mise run ansible:ping
 # Update SSH known_hosts
 mise run ansible:update-known-hosts
 
+# Deploy K3s HA cluster
+mise run ansible:deploy-k3s
+
 # Run a custom playbook
 mise run ansible:run playbooks/your-playbook.yml
 ```
@@ -146,10 +149,12 @@ pre-commit run --all-files
 |----------|---------|-------------|
 | `hcloud_token` | - | Hetzner Cloud API token (from 1Password) |
 | `ssh_key_name` | - | Name of SSH key in Hetzner Cloud (from 1Password) |
+| `k3s_token` | - | K3s cluster token for node authentication (from 1Password) |
 | `server_type` | `cx23` | Hetzner server type |
 | `allowed_admin_cidr` | `73.97.54.81/32` | Admin access CIDR |
 | `location` | `hel1` | Hetzner datacenter location |
 | `network_zone` | `eu-central` | Network zone for resources |
+| `k3s_version` | `v1.31.4+k3s1` | K3s version to install |
 
 ## Outputs
 
@@ -238,12 +243,33 @@ firewall-cmd --reload
 - Option 3 requires manual verification on each node
 - Always test changes in a development environment first
 
+## K3s Deployment
+
+After infrastructure is provisioned, deploy the K3s HA cluster:
+
+```bash
+# Deploy K3s to all nodes
+mise run ansible:deploy-k3s
+
+# Configure kubeconfig
+export KUBECONFIG=/tmp/k3s-kubeconfig.yaml
+
+# Update kubeconfig to use floating IP
+FLOATING_IP=$(op run -- tofu -chdir=tofu output -raw floating_ip)
+sed -i "s|https://127.0.0.1:6443|https://$FLOATING_IP:6443|g" /tmp/k3s-kubeconfig.yaml
+
+# Verify cluster
+kubectl get nodes -o wide
+kubectl cluster-info
+```
+
 ## Next Steps
 
-This completes Phase 1 (Infrastructure Provisioning). Next phases:
-1. **Phase 2**: K3s cluster installation and configuration
-2. **Phase 3**: Kube-VIP setup for HA floating IP management
-3. **Phase 4**: Application workload deployment
+K3s cluster is now operational. Next phases:
+1. ✅ **Phase 1**: Infrastructure Provisioning (Complete)
+2. ✅ **Phase 2**: K3s cluster installation (Complete)
+3. **Phase 3**: Kube-VIP setup for HA floating IP management
+4. **Phase 4**: Application workload deployment
 
 ## Security Notes
 

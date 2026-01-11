@@ -97,6 +97,9 @@ mise run ansible:ping
 # Update SSH known_hosts with current server fingerprints
 mise run ansible:update-known-hosts
 
+# Deploy K3s HA cluster
+mise run ansible:deploy-k3s
+
 # Run a specific playbook
 mise run ansible:run playbooks/your-playbook.yml
 ```
@@ -115,6 +118,7 @@ All commands use `op run --` for 1Password secret injection. Secrets are configu
 - `HCLOUD_TOKEN`: Hetzner Cloud API token (used by both OpenTofu and Ansible)
 - `TF_VAR_hcloud_token`: References `$HCLOUD_TOKEN` for OpenTofu
 - `TF_VAR_ssh_key_name`: Name of SSH key in Hetzner Cloud
+- `K3S_TOKEN`: K3s cluster token for node authentication
 
 SSH authentication uses the 1Password SSH agent (no private key file needed).
 

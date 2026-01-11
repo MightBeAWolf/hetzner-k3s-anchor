@@ -76,6 +76,25 @@ SSH fingerprints are automatically updated by OpenTofu when infrastructure chang
 mise run ansible:update-known-hosts
 ```
 
+### Deploy K3s Cluster
+
+Deploy a 3-node HA K3s cluster with embedded etcd:
+```bash
+mise run ansible:deploy-k3s
+```
+
+This will:
+- Install K3s on all nodes
+- Configure HA with embedded etcd
+- Set up TLS SANs for the floating IP
+- Retrieve kubeconfig to `/tmp/k3s-kubeconfig.yaml`
+
+After deployment:
+```bash
+export KUBECONFIG=/tmp/k3s-kubeconfig.yaml
+kubectl get nodes
+```
+
 ### Run Custom Playbooks
 
 ```bash

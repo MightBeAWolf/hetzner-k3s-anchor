@@ -22,30 +22,30 @@ compose:
 # Create Ansible groups based on labels and attributes
 groups:
   # Group all k3s nodes
-  k3s_nodes: labels.role == "k3s-node"
+  k3s_nodes: hcloud_labels.role == "k3s-node"
 
   # Group by environment
-  production: labels.environment == "production"
+  production: hcloud_labels.environment == "production"
 
   # Group by project
-  anchor: labels.project == "anchor"
+  anchor: hcloud_labels.project == "anchor"
 
   # Group by location (for future multi-region)
-  hel1: location == "hel1"
+  hel1: hcloud_location == "hel1"
 
 # Create keyed groups for dynamic grouping
 keyed_groups:
   # Group by server type (e.g., type_cx23)
-  - key: server_type
+  - key: hcloud_server_type
     prefix: type
     separator: "_"
 
   # Group by status (e.g., status_running)
-  - key: status
+  - key: hcloud_status
     prefix: status
     separator: "_"
 
   # Group by location (e.g., location_hel1)
-  - key: location
+  - key: hcloud_location
     prefix: location
     separator: "_"

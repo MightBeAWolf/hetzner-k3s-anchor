@@ -2,6 +2,8 @@
 HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
 TF_VAR_hcloud_token = "{{ env.HCLOUD_TOKEN }}"
 TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
+K3S_TOKEN = "op://Private/Anchor-K3s-Cluster/credential"
+KUBECONFIG = "{{ config_root }}/kubeconfig"
 
 [tools]
 "opentofu" = "latest"
@@ -9,6 +11,7 @@ TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
 "pipx" = "latest"
 "uv" = "latest"
 "pipx:ansible-core" = { version = "latest", uvx_args = "--with requests --with hcloud" }
+"kubectl" = "latest"
 
 # Setup tasks
 [tasks.setup]
@@ -107,3 +110,13 @@ description = "Run an Ansible playbook"
 usage = 'arg "<playbook>" help="Path to playbook (e.g., playbooks/ping.yml)"'
 dir = "ansible"
 run = "op run -- ansible-playbook ${usage_playbook}"
+
+[tasks."ansible:deploy-k3s"]
+description = "Deploy K3s HA cluster to all nodes"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/deploy-k3s.yml"
+
+[tasks."ansible:uninstall-k3s"]
+description = "Uninstall K3s from all nodes"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/uninstall-k3s.yml"
