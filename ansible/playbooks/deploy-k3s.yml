@@ -13,6 +13,13 @@
         fail_msg: "K3S_TOKEN environment variable must be set. Generate with: openssl rand -hex 32"
         success_msg: "K3S_TOKEN is configured"
 
+    - name: Verify K3S_ETCD_SECRET is set
+      ansible.builtin.assert:
+        that:
+          - lookup('env', 'K3S_ETCD_SECRET') | length > 0
+        fail_msg: "K3S_ETCD_SECRET environment variable must be set. Generate with: openssl rand -hex 32"
+        success_msg: "K3S_ETCD_SECRET is configured"
+
     - name: Fetch Load Balancer from Hetzner Cloud by label
       hetzner.hcloud.load_balancer_info:
         label_selector: "project=anchor,role=k3s-control-plane"
@@ -70,6 +77,31 @@
         mode: '0755'
       when: not k3s_binary.stat.exists
 
+    - name: Ensure k3s encryption config directory exists
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/server/cred
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Deploy k3s etcd encryption configuration
+      ansible.builtin.template:
+        src: etcd-encryption-config.yml.j2
+        dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
+        owner: root
+        group: root
+        mode: '0600'
+      register: k3s_encryption_config
+
+    - name: Define etcd's encryption configuration
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+      when: not k3s_binary.stat.exists
+      no_log: true
+
     - name: Install K3s server (cluster init)
       ansible.builtin.command:
         cmd: >
@@ -81,6 +113,7 @@
           --disable=servicelb
           --disable=traefik
           --write-kubeconfig-mode=0644
+          --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
       environment:
         INSTALL_K3S_VERSION: "{{ k3s_version }}"
         K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"
@@ -152,6 +185,31 @@
         mode: '0755'
       when: not k3s_binary.stat.exists
 
+    - name: Ensure k3s encryption config directory exists
+      ansible.builtin.file:
+        path: /var/lib/rancher/k3s/server/cred
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Deploy k3s etcd encryption configuration
+      ansible.builtin.template:
+        src: etcd-encryption-config.yml.j2
+        dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
+        owner: root
+        group: root
+        mode: '0600'
+      register: k3s_encryption_config
+
+    - name: Define etcd's encryption configuration
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s-install.sh
+        mode: '0755'
+      when: not k3s_binary.stat.exists
+      no_log: true
+
     - name: Check if node is already in cluster
       ansible.builtin.command: k3s kubectl get node {{ inventory_hostname }}
       register: node_in_cluster
@@ -169,6 +227,7 @@
           --disable=servicelb
           --disable=traefik
           --write-kubeconfig-mode=0644
+          --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
       environment:
         INSTALL_K3S_VERSION: "{{ k3s_version }}"
         K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"

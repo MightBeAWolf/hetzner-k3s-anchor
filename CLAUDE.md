@@ -119,6 +119,7 @@ All commands use `op run --` for 1Password secret injection. Secrets are configu
 - `TF_VAR_hcloud_token`: References `$HCLOUD_TOKEN` for OpenTofu
 - `TF_VAR_ssh_key_name`: Name of SSH key in Hetzner Cloud
 - `K3S_TOKEN`: K3s cluster token for node authentication
+- `K3S_ETCD_SECRET`: AES-CBC encryption key for etcd secrets (generated with `head -c 32 /dev/urandom | base64`)
 
 SSH authentication uses the 1Password SSH agent (no private key file needed).
 
@@ -194,6 +195,17 @@ The floating IP assignment uses `ignore_changes = [server_id]` in its lifecycle 
 - `anchor`: All nodes with project=anchor
 - `type_cx23`: Grouped by server type
 - `status_running`: Grouped by status
+
+### K3s etcd Encryption
+The cluster implements encryption-at-rest for Kubernetes secrets in etcd using AES-CBC encryption:
+- **Encryption Key**: Managed via `K3S_ETCD_SECRET` environment variable in 1Password
+- **Configuration**: Template at `ansible/playbooks/templates/etcd-encryption-config.yml.j2`
+- **Deployment Location**: `/var/lib/rancher/k3s/server/cred/encryption-config.yml` (mode 0600)
+- **K3s Integration**: Applied via `--kube-apiserver-arg=encryption-provider-config` flag
+- **Resources Encrypted**: All Kubernetes Secret resources
+- **Fallback**: Identity provider for backward compatibility with unencrypted data
+
+The encryption configuration is deployed during K3s installation on all server nodes. The directory `/var/lib/rancher/k3s/server/cred/` is created with mode 0700 for secure storage.
 
 ### Phase Scope
 This is **Phase 1 only** - infrastructure provisioning. K3s installation, kube-vip setup, and application deployment are future phases. Do not implement Kubernetes components in this phase.

@@ -3,6 +3,8 @@ HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
 TF_VAR_hcloud_token = "{{ env.HCLOUD_TOKEN }}"
 TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
 K3S_TOKEN = "op://Private/Anchor-K3s-Cluster/credential"
+# Created with `head -c 32 /dev/urandom | base64`
+K3S_ETCD_SECRET = "op://Private/Anchor-K3s-Cluster/etcd_secret"
 KUBECONFIG = "{{ config_root }}/kubeconfig"
 
 [tools]
