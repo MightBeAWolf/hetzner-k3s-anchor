@@ -13,27 +13,27 @@
         fail_msg: "K3S_TOKEN environment variable must be set. Generate with: openssl rand -hex 32"
         success_msg: "K3S_TOKEN is configured"
 
-    - name: Fetch floating IP from Hetzner Cloud by label
-      hetzner.hcloud.floating_ip_info:
-        label_selector: "project=anchor,role=k3s-floating-ip"
-      register: hcloud_floating_ips
+    - name: Fetch Load Balancer from Hetzner Cloud by label
+      hetzner.hcloud.load_balancer_info:
+        label_selector: "project=anchor,role=k3s-control-plane"
+      register: hcloud_load_balancers
       no_log: true
 
-    - name: Verify exactly one floating IP found
+    - name: Verify exactly one Load Balancer found
       ansible.builtin.assert:
         that:
-          - hcloud_floating_ips.hcloud_floating_ip_info | length == 1
-        fail_msg: "Expected exactly 1 floating IP with labels project=anchor,role=k3s-floating-ip, found {{ hcloud_floating_ips.hcloud_floating_ip_info | length }}"
+          - hcloud_load_balancers.hcloud_load_balancer_info | length == 1
+        fail_msg: "Expected exactly 1 Load Balancer with labels project=anchor,role=k3s-control-plane, found {{ hcloud_load_balancers.hcloud_load_balancer_info | length }}"
 
-    - name: Set floating IP fact
+    - name: Set Load Balancer IP fact
       ansible.builtin.set_fact:
-        k3s_floating_ip: "{{ hcloud_floating_ips.hcloud_floating_ip_info[0].ip }}"
+        k3s_control_plane_endpoint: "{{ hcloud_load_balancers.hcloud_load_balancer_info[0].ipv4_address }}"
         cacheable: true
 
     - name: Display deployment configuration
       ansible.builtin.debug:
         msg:
-          - "Floating IP: {{ k3s_floating_ip }}"
+          - "Control Plane Endpoint: {{ k3s_control_plane_endpoint }}"
           - "Ready to deploy K3s cluster"
 
 - name: Initialize K3s Cluster on First Node
@@ -41,7 +41,7 @@
   become: true
   gather_facts: true
   vars:
-    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+    k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
 
   pre_tasks:
     - name: Verify system requirements
@@ -76,7 +76,7 @@
           /tmp/k3s-install.sh server
           --cluster-init
           --node-ip={{ hcloud_private_networks[0]['ip'] }}
-          --tls-san={{ k3s_floating_ip }}
+          --tls-san={{ k3s_control_plane_endpoint }}
           --tls-san={{ hcloud_private_networks[0]['ip'] }}
           --disable=servicelb
           --disable=traefik
@@ -117,7 +117,7 @@
   gather_facts: true
   serial: 1  # Join nodes one at a time
   vars:
-    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+    k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
 
   pre_tasks:
     - name: Verify system requirements
@@ -165,7 +165,7 @@
           /tmp/k3s-install.sh server
           --server https://{{ hostvars[k3s_cluster_init_node]['hcloud_private_networks'][0]['ip'] }}:6443
           --node-ip={{ hcloud_private_networks[0]['ip'] }}
-          --tls-san={{ k3s_floating_ip }}
+          --tls-san={{ k3s_control_plane_endpoint }}
           --disable=servicelb
           --disable=traefik
           --write-kubeconfig-mode=0644
@@ -195,46 +195,41 @@
         state: absent
 
 - name: Retrieve kubeconfig
-  hosts: k3s_nodes
+  hosts: k3s-converged-node-01
   become: true
   gather_facts: false
-  run_once: true
   vars:
-    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+    k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
   tasks:
     - name: Fetch kubeconfig from first node
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
       register: kubeconfig_content
-      when: inventory_hostname == k3s_cluster_init_node
       no_log: true
 
     - name: Save kubeconfig locally
       ansible.builtin.copy:
-        content: "{{ kubeconfig_content.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + k3s_floating_ip + ':6443') }}"
+        content: "{{ kubeconfig_content.content | b64decode | regex_replace('https://127.0.0.1:6443', 'https://' + k3s_control_plane_endpoint + ':6443') }}"
         dest: "{{ playbook_dir }}/../../kubeconfig"
         mode: '0600'
       delegate_to: localhost
       become: false
-      when: inventory_hostname == k3s_cluster_init_node
       no_log: true
 
     - name: Display cluster info
       ansible.builtin.command: k3s kubectl get nodes -o wide
       register: cluster_nodes
       changed_when: false
-      when: inventory_hostname == k3s_cluster_init_node
 
     - name: Show cluster status
       ansible.builtin.debug:
         msg: "{{ cluster_nodes.stdout_lines }}"
-      when: inventory_hostname == k3s_cluster_init_node
 
 - name: Post-deployment instructions
   hosts: localhost
   gather_facts: false
   vars:
-    k3s_floating_ip: "{{ hostvars['localhost']['k3s_floating_ip'] }}"
+    k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
   tasks:
     - name: Display kubeconfig instructions
       ansible.builtin.debug:
@@ -242,7 +237,7 @@
           ✅ K3s cluster deployed successfully!
 
           Kubeconfig saved to: kubeconfig
-          Floating IP: {{ k3s_floating_ip }}
+          Control Plane Endpoint: {{ k3s_control_plane_endpoint }}:6443
 
           Next steps:
           1. Configure kubectl:

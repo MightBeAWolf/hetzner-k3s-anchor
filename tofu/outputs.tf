@@ -8,9 +8,14 @@ output "node_private_ips" {
   value       = [for server in hcloud_server.k3s_nodes : tolist(server.network)[0].ip]
 }
 
-output "floating_ip" {
-  description = "Floating IP address for high availability"
-  value       = hcloud_floating_ip.k3s_floating_ip.ip_address
+output "load_balancer_ip" {
+  description = "Load Balancer IP address for K3s API (control plane endpoint)"
+  value       = hcloud_load_balancer.k3s_control_plane.ipv4
+}
+
+output "load_balancer_private_ip" {
+  description = "Load Balancer private IP address"
+  value       = hcloud_load_balancer_network.k3s_control_plane.ip
 }
 
 output "node_names" {

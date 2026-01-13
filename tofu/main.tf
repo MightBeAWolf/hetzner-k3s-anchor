@@ -17,17 +17,55 @@ resource "hcloud_network_subnet" "k3s_subnet" {
   ip_range     = "192.168.1.0/24"
 }
 
-# Floating IP
-resource "hcloud_floating_ip" "k3s_floating_ip" {
-  type          = "ipv4"
-  home_location = var.location
-  name          = "k3s-floating-ip"
+# Load Balancer for K3s Control Plane HA
+resource "hcloud_load_balancer" "k3s_control_plane" {
+  name               = "k3s-control-plane-lb"
+  load_balancer_type = "lb11"
+  location           = var.location
 
   labels = {
     project     = "anchor"
     environment = "production"
-    role        = "k3s-floating-ip"
+    role        = "k3s-control-plane"
   }
+}
+
+# Load Balancer Network Attachment
+resource "hcloud_load_balancer_network" "k3s_control_plane" {
+  load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
+  network_id       = hcloud_network.k3s_network.id
+  ip               = "192.168.1.10"
+
+  depends_on = [hcloud_network_subnet.k3s_subnet]
+}
+
+# Load Balancer Target - Control Plane Nodes
+resource "hcloud_load_balancer_target" "k3s_control_plane" {
+  count            = 3
+  type             = "server"
+  load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
+  server_id        = hcloud_server.k3s_nodes[count.index].id
+  use_private_ip   = true
+
+  depends_on = [hcloud_load_balancer_network.k3s_control_plane]
+}
+
+# Load Balancer Service - K3s API
+resource "hcloud_load_balancer_service" "k3s_api" {
+  load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
+  protocol         = "tcp"
+  listen_port      = 6443
+  destination_port = 6443
+
+  health_check {
+    protocol = "tcp"
+    port     = 6443
+    interval = 10
+    timeout  = 5
+    retries  = 3
+  }
+
+  depends_on = [hcloud_load_balancer_target.k3s_control_plane]
 }
 
 # Cloud Firewall
@@ -129,15 +167,6 @@ resource "hcloud_server" "k3s_nodes" {
   depends_on = [hcloud_network_subnet.k3s_subnet]
 }
 
-# Assign Floating IP to first node (unmanaged for kube-vip takeover)
-resource "hcloud_floating_ip_assignment" "k3s_floating_ip_assignment" {
-  floating_ip_id = hcloud_floating_ip.k3s_floating_ip.id
-  server_id      = hcloud_server.k3s_nodes[0].id
-
-  lifecycle {
-    ignore_changes = [server_id]
-  }
-}
 
 # Update SSH known_hosts on local workstation when servers change
 resource "null_resource" "update_known_hosts" {

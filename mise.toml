@@ -79,8 +79,7 @@ run = [
   op run -- tofu apply \
     -replace=hcloud_server.k3s_nodes[0] \
     -replace=hcloud_server.k3s_nodes[1] \
-    -replace=hcloud_server.k3s_nodes[2] \
-    -replace=hcloud_floating_ip_assignment.k3s_floating_ip_assignment
+    -replace=hcloud_server.k3s_nodes[2]
   """
 ]
 
