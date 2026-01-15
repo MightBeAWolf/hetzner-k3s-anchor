@@ -3,6 +3,38 @@
 package_update: true
 package_upgrade: true
 
+# Configure CIS-compliant kernel parameters early in boot
+bootcmd:
+  - |
+    cat > /etc/sysctl.d/90-kubelet.conf << 'EOF'
+    # CIS Benchmark kernel parameters for K3s
+    # Do NOT panic on OOM; invoke oom_killer instead (K3s CIS hardening guide)
+    vm.panic_on_oom=0
+    # Allow memory overcommit for container workloads
+    vm.overcommit_memory=1
+    # Reboot 10 seconds after kernel panic
+    kernel.panic=10
+    # Panic on kernel oops
+    kernel.panic_on_oops=1
+    # IP forwarding (K3s requires this)
+    net.ipv4.ip_forward=1
+    net.ipv6.conf.all.forwarding=1
+    # TCP SYN cookies for DDoS protection
+    net.ipv4.tcp_syncookies=1
+    # Disable ICMP redirects (security)
+    net.ipv4.conf.all.accept_redirects=0
+    net.ipv4.conf.default.accept_redirects=0
+    net.ipv6.conf.all.accept_redirects=0
+    net.ipv6.conf.default.accept_redirects=0
+    net.ipv4.conf.all.send_redirects=0
+    net.ipv4.conf.default.send_redirects=0
+    # Reverse path filtering: 1=strict (RFC3704), 2=loose (RFC3704)
+    # Strict can break asymmetric routing/multi-homed nodes common in K8s CNI
+    net.ipv4.conf.all.rp_filter=2
+    net.ipv4.conf.default.rp_filter=2
+    EOF
+  - sysctl --system
+
 packages:
   - curl
   - ca-certificates

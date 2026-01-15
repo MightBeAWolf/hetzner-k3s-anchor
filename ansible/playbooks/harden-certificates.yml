@@ -1,0 +1,42 @@
+---
+- name: Harden K3s TLS certificate permissions
+  hosts: k3s_nodes
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Find all certificate and key files
+      ansible.builtin.find:
+        paths: /var/lib/rancher/k3s/server/tls/
+        patterns: '*.crt,*.key'
+        file_type: file
+      register: cert_files
+
+    - name: Set strict permissions on certificates and keys
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        mode: '0600'
+        owner: root
+        group: root
+      loop: "{{ cert_files.files }}"
+      when: cert_files.files | length > 0
+
+    - name: Set permissions on token and credential files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: '0600'
+        owner: root
+        group: root
+      loop:
+        - /var/lib/rancher/k3s/server/token
+        - /etc/rancher/k3s/k3s.yaml
+      ignore_errors: true
+
+    - name: Verify certificate permissions
+      ansible.builtin.command: ls -la /var/lib/rancher/k3s/server/tls/
+      register: cert_perms
+      changed_when: false
+
+    - name: Display certificate permissions
+      ansible.builtin.debug:
+        var: cert_perms.stdout_lines

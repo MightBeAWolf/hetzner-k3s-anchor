@@ -1,0 +1,69 @@
+---
+- name: Validate K3s CIS Hardening
+  hosts: k3s_nodes
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Validate kernel parameters
+      ansible.builtin.command: "sysctl {{ item.key }}"
+      register: sysctl_result
+      failed_when: item.value not in sysctl_result.stdout
+      changed_when: false
+      loop:
+        - { key: "vm.panic_on_oom", value: "= 0" }
+        - { key: "vm.overcommit_memory", value: "= 1" }
+        - { key: "kernel.panic", value: "= 10" }
+        - { key: "kernel.panic_on_oops", value: "= 1" }
+
+    - name: Validate protect-kernel-defaults
+      ansible.builtin.shell: "ps aux | grep '[k]ubelet' | grep -o 'protect-kernel-defaults=[^ ]*'"
+      register: protect_check
+      failed_when: "'protect-kernel-defaults=true' not in protect_check.stdout"
+      changed_when: false
+
+    - name: Validate audit log exists
+      ansible.builtin.stat:
+        path: /var/lib/rancher/k3s/server/logs/audit.log
+      register: audit_log
+      failed_when: not audit_log.stat.exists
+
+    - name: Validate certificate permissions
+      ansible.builtin.find:
+        paths: /var/lib/rancher/k3s/server/tls/
+        patterns: '*.crt,*.key'
+        file_type: file
+      register: certs
+
+    - name: Check certificate permissions are 600
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      register: cert_perms
+      failed_when: cert_perms.stat.mode != '0600'
+      loop: "{{ certs.files }}"
+      when: certs.files | length > 0
+
+- name: Validate Kubernetes Resources
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Validate network policies exist
+      ansible.builtin.command: kubectl get networkpolicies -A --no-headers
+      register: netpols
+      failed_when: netpols.stdout_lines | length < 3
+      changed_when: false
+
+    - name: Validate service account automount disabled
+      ansible.builtin.command: kubectl get sa default -n default -o yaml
+      register: sa_check
+      failed_when: "'automountServiceAccountToken: false' not in sa_check.stdout"
+      changed_when: false
+
+    - name: Test PSA enforcement (should fail)
+      ansible.builtin.command: kubectl run psa-test --image=nginx --privileged=true --dry-run=server
+      register: psa_test
+      failed_when: "'violates PodSecurity' not in psa_test.stderr"
+      changed_when: false
+      ignore_errors: true

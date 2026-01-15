@@ -1,0 +1,118 @@
+# Allow DNS - Ingress from all namespaces, Egress to upstream DNS and internal
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow DNS queries from all namespaces
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+  egress:
+    # Allow DNS to query internal pods
+    - to:
+        - namespaceSelector: {}
+        - podSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow DNS to reach upstream external DNS servers (Google, Cloudflare, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.0.0/16  # Exclude link-local
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow metrics-server to scrape kubelet metrics
+# CORRECTED: metrics-server needs EGRESS to port 10250 (not ingress)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-server
+  namespace: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: metrics-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow API server to query metrics-server on its service port
+    - ports:
+        - protocol: TCP
+          port: 4443
+  egress:
+    # Allow metrics-server to scrape kubelet metrics (port 10250)
+    - ports:
+        - protocol: TCP
+          port: 10250
+    # Allow metrics-server to reach API server
+    - ports:
+        - protocol: TCP
+          port: 6443
+---
+# Allow kube-system pods to reach API server
+# CORRECTED: Properly scoped to API server service, not "all destinations"
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-server-egress
+  namespace: kube-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow reaching API server service (typically kubernetes.default.svc)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+        - podSelector:
+            matchLabels:
+              component: apiserver
+      ports:
+        - protocol: TCP
+          port: 6443
+    # Allow reaching API server via node IP (for kubelet, etc.)
+    - ports:
+        - protocol: TCP
+          port: 6443
+---
+# Allow kube-system pods to communicate with each other
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: kube-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
