@@ -480,6 +480,21 @@
       register: ccm_rollout
       until: ccm_rollout is success
 
+- name: Deploy Hetzner CSI Driver
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Deploy Hetzner CSI Driver
+      ansible.builtin.command:
+        cmd: kubectl apply -f https://raw.githubusercontent.com/hetznercloud/csi-driver/v2.13.0/deploy/kubernetes/hcloud-csi.yml
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        HCLOUD_VOLUME_DEFAULT_LOCATION: "{{ hcloud_location }}"
+      register: csi_install
+      changed_when: 
+        - "'created' in csi_install.stdout or 'configured' in csi_install.stdout"
+
 - name: Post-deployment instructions
   hosts: localhost
   gather_facts: false
