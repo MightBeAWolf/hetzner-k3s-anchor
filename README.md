@@ -72,9 +72,15 @@ This will:
   - `k3s-converged-node-02` (192.168.1.3)
   - `k3s-converged-node-03` (192.168.1.4)
   - Labeled: `project=anchor`, `environment=production`, `role=k3s-node`
-- **Private Network** (192.168.0.0/16)
-- **Floating IP** (for HA, managed by kube-vip)
+- **Private Network** (192.168.0.0/16, labeled for CCM discovery)
+- **Load Balancer** (for K3s API HA endpoint)
 - **Cloud Firewall** (restricted access)
+
+### Kubernetes Components
+- **K3s** (v1.31.4+k3s1) - Lightweight Kubernetes distribution
+- **Hetzner Cloud Controller Manager** - Node lifecycle and LoadBalancer provisioning
+- **kube-router** - NetworkPolicy controller
+- **etcd encryption** - Secrets encrypted at rest with AES-CBC
 
 ### Security Configuration
 - SSH access restricted to `73.97.54.81/32`
@@ -166,8 +172,8 @@ op run -- tofu -chdir=tofu output node_public_ips
 # Get node private IPs
 op run -- tofu -chdir=tofu output node_private_ips
 
-# Get floating IP
-op run -- tofu -chdir=tofu output floating_ip
+# Get Load Balancer IP (control plane endpoint)
+op run -- tofu -chdir=tofu output load_balancer_ip
 
 # Get specific node IP by index (0-2)
 mise run tofu:ip 0  # node-01
@@ -248,32 +254,36 @@ firewall-cmd --reload
 After infrastructure is provisioned, deploy the K3s HA cluster:
 
 ```bash
-# Deploy K3s to all nodes
+# Deploy K3s to all nodes (includes CCM and kube-router)
 mise run ansible:deploy-k3s
 
-# Configure kubeconfig
-export KUBECONFIG=/tmp/k3s-kubeconfig.yaml
-
-# Update kubeconfig to use floating IP
-FLOATING_IP=$(op run -- tofu -chdir=tofu output -raw floating_ip)
-sed -i "s|https://127.0.0.1:6443|https://$FLOATING_IP:6443|g" /tmp/k3s-kubeconfig.yaml
+# Configure kubeconfig (automatically saved to ./kubeconfig)
+export KUBECONFIG=./kubeconfig
 
 # Verify cluster
 kubectl get nodes -o wide
 kubectl cluster-info
+
+# Verify CCM is running
+kubectl get pods -n kube-system -l app=hcloud-cloud-controller-manager
+
+# Test LoadBalancer provisioning
+kubectl create deployment test-nginx --image=nginx
+kubectl expose deployment test-nginx --type=LoadBalancer --port=80
+kubectl get svc test-nginx -w  # Wait for EXTERNAL-IP
 ```
 
 ## Next Steps
 
 K3s cluster is now operational. Next phases:
 1. ✅ **Phase 1**: Infrastructure Provisioning (Complete)
-2. ✅ **Phase 2**: K3s cluster installation (Complete)
-3. **Phase 3**: Kube-VIP setup for HA floating IP management
-4. **Phase 4**: Application workload deployment
+2. ✅ **Phase 2**: K3s cluster installation with Hetzner CCM (Complete)
+3. **Phase 3**: Application workload deployment
 
 ## Security Notes
 
-- This is infrastructure-only provisioning
-- K3s installation not included in this phase
-- Google Authenticator 2FA setup deferred for manual configuration
+- Pod Security Admission enforces "restricted" policy
+- etcd secrets encrypted at rest with AES-CBC
+- NetworkPolicies enforced via kube-router
+- Google Authenticator 2FA configuration deferred for manual setup
 - All firewall rules use allow-list approach

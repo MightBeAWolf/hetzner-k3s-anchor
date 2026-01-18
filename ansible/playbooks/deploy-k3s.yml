@@ -37,10 +37,28 @@
         k3s_control_plane_endpoint: "{{ hcloud_load_balancers.hcloud_load_balancer_info[0].ipv4_address }}"
         cacheable: true
 
+    - name: Fetch Hetzner Cloud Network information
+      hetzner.hcloud.network_info:
+        label_selector: "project=anchor"
+      register: hcloud_networks
+      no_log: true
+
+    - name: Verify exactly one network found
+      ansible.builtin.assert:
+        that:
+          - hcloud_networks.hcloud_network_info | length == 1
+        fail_msg: "Expected exactly 1 network with label project=anchor, found {{ hcloud_networks.hcloud_network_info | length }}"
+
+    - name: Set Hetzner Network fact
+      ansible.builtin.set_fact:
+        hcloud_network_name: "{{ hcloud_networks.hcloud_network_info[0].name }}"
+        cacheable: true
+
     - name: Display deployment configuration
       ansible.builtin.debug:
         msg:
           - "Control Plane Endpoint: {{ k3s_control_plane_endpoint }}"
+          - "Hetzner Network: {{ hcloud_network_name }}"
           - "Ready to deploy K3s cluster"
 
 - name: Initialize K3s Cluster on First Node
@@ -144,6 +162,8 @@
           --tls-san={{ hcloud_private_networks[0]['ip'] }}
           --disable=servicelb
           --disable=traefik
+          --disable-cloud-controller
+          --kubelet-arg=cloud-provider=external
           --write-kubeconfig-mode=0644
           --protect-kernel-defaults=true
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
@@ -306,6 +326,8 @@
           --tls-san={{ k3s_control_plane_endpoint }}
           --disable=servicelb
           --disable=traefik
+          --disable-cloud-controller
+          --kubelet-arg=cloud-provider=external
           --write-kubeconfig-mode=0644
           --protect-kernel-defaults=true
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
@@ -404,7 +426,59 @@
         - networkpolicies/default-deny-all.yaml.j2
         - networkpolicies/kube-system-policies.yaml.j2
         - networkpolicies/default-namespace-policy.yaml.j2
+        - networkpolicies/ccm-policy.yaml.j2
         - serviceaccounts/disable-automount.yaml.j2
+
+- name: Deploy Hetzner Cloud Controller Manager
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  vars:
+    hcloud_network_name: "{{ hostvars['localhost']['hcloud_network_name'] }}"
+  tasks:
+    - name: Create temporary directory for CCM manifests
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: ccm_
+      register: ccm_temp_dir
+
+    - name: Template CCM secret manifest
+      ansible.builtin.template:
+        src: ccm/00-hcloud-secret.yaml.j2
+        dest: "{{ ccm_temp_dir.path }}/00-hcloud-secret.yaml"
+        mode: '0600'
+      no_log: true
+
+    - name: Template CCM deployment manifest
+      ansible.builtin.template:
+        src: ccm/10-hcloud-ccm.yaml.j2
+        dest: "{{ ccm_temp_dir.path }}/10-hcloud-ccm.yaml"
+        mode: '0600'
+
+    - name: Apply CCM manifests with kubectl
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f {{ ccm_temp_dir.path }}/
+      register: ccm_apply_result
+      changed_when: "'created' in ccm_apply_result.stdout or 'configured' in ccm_apply_result.stdout"
+
+    - name: Display CCM apply result
+      ansible.builtin.debug:
+        msg: "{{ ccm_apply_result.stdout_lines }}"
+
+    - name: Clean up temporary CCM manifests
+      ansible.builtin.file:
+        path: "{{ ccm_temp_dir.path }}"
+        state: absent
+      no_log: true
+
+    - name: Wait for CCM deployment to be ready
+      ansible.builtin.command:
+        cmd: k3s kubectl rollout status deployment/hcloud-cloud-controller-manager -n kube-system --timeout=120s
+      changed_when: false
+      retries: 3
+      delay: 10
+      register: ccm_rollout
+      until: ccm_rollout is success
 
 - name: Post-deployment instructions
   hosts: localhost

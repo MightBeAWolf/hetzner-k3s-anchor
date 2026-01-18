@@ -117,6 +117,11 @@ description = "Deploy K3s HA cluster to all nodes"
 dir = "ansible"
 run = "op run -- ansible-playbook playbooks/deploy-k3s.yml"
 
+[tasks."ansible:verify-ccm"]
+description = "Verify Hetzner Cloud Controller Manager installation"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/verify-ccm.yml"
+
 [tasks."ansible:uninstall-k3s"]
 description = "Uninstall K3s from all nodes"
 dir = "ansible"

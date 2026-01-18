@@ -9,18 +9,20 @@ This is Phase 1 of the Anchor Project - a High-Availability Kubernetes cluster i
 ## Architecture
 
 ### Infrastructure Stack
-- **Cloud Provider**: Hetzner Cloud (eu-central region)
+- **Cloud Provider**: Hetzner Cloud (hel1 region)
 - **Infrastructure as Code**: OpenTofu (in `/tofu/` directory)
 - **Configuration Management**: Ansible (in `/ansible/` directory) with Hetzner Cloud dynamic inventory
-- **Target Deployment**: 3-node K3s cluster with HA floating IP
+- **Kubernetes**: 3-node K3s HA cluster with embedded etcd
+- **Cloud Controller**: Hetzner CCM for LoadBalancer services and node lifecycle
+- **HA Endpoint**: Hetzner Load Balancer for K3s API
 - **Security**: Allow-list firewall rules, SSH key authentication via 1Password SSH agent
 - **Secret Management**: 1Password CLI integration via `op run`
 
 ### Resource Design
-- **Networking**: Private network (192.168.0.0/16) with cloud subnet (192.168.1.0/24)
+- **Networking**: Private network (192.168.0.0/16) with cloud subnet (192.168.1.0/24), labeled `project=anchor`
 - **Compute**: 3x cx23 servers with static private IPs (.2, .3, .4)
 - **Server Labels**: All servers tagged with `project=anchor`, `environment=production`, `role=k3s-node`, and `node_index`
-- **HA Setup**: Floating IP initially assigned to node-01 but lifecycle-ignored for kube-vip takeover
+- **HA Setup**: Hetzner Load Balancer fronts K3s API on port 6443
 - **Bootstrap**: cloud-init.yaml configures Debian 12 with modular provisioning scripts
 
 ## Essential Commands
@@ -79,8 +81,8 @@ op run -- tofu -chdir=tofu output node_public_ips
 # Get all node private IPs
 op run -- tofu -chdir=tofu output node_private_ips
 
-# Get floating IP
-op run -- tofu -chdir=tofu output floating_ip
+# Get Load Balancer IP (control plane endpoint)
+op run -- tofu -chdir=tofu output load_balancer_ip
 
 # Get node names
 op run -- tofu -chdir=tofu output node_names
@@ -151,14 +153,6 @@ The `node_private_ips` output uses a for-expression with `tolist()` because the 
 value = [for server in hcloud_server.k3s_nodes : tolist(server.network)[0].ip]
 ```
 
-### Floating IP Lifecycle Management
-The floating IP assignment uses `ignore_changes = [server_id]` in its lifecycle block (main.tf:124-126). This is intentional:
-- Initial assignment: OpenTofu assigns floating IP to node-01
-- Runtime management: kube-vip takes over floating IP management for HA failover
-- OpenTofu won't fight kube-vip by reverting the assignment back to node-01
-
-**Important**: When using `mise run tofu:replace-nodes`, the task explicitly re-assigns the floating IP to the new node-01 after server recreation.
-
 ### State Isolation
 - All OpenTofu files are in `/tofu/` directory
 - Use `dir = "tofu"` in mise tasks for proper working directory
@@ -207,8 +201,24 @@ The cluster implements encryption-at-rest for Kubernetes secrets in etcd using A
 
 The encryption configuration is deployed during K3s installation on all server nodes. The directory `/var/lib/rancher/k3s/server/cred/` is created with mode 0700 for secure storage.
 
+### Hetzner Cloud Controller Manager (CCM)
+The cluster uses Hetzner CCM for cloud provider integration:
+- **Deployment**: Applied via `kubectl apply` from a single node (not auto-deploy manifests)
+- **Location**: Configured via `HCLOUD_LOAD_BALANCERS_LOCATION` environment variable
+- **Features**: Node lifecycle management, LoadBalancer service provisioning, route management
+- **Network Discovery**: Uses label selector `project=anchor` to find the Hetzner network
+- **Templates**: Located in `ansible/playbooks/templates/ccm/`
+  - `00-hcloud-secret.yaml.j2` - API token and network name
+  - `10-hcloud-ccm.yaml.j2` - ServiceAccount, RBAC, and Deployment
+
+### kube-router NetworkPolicy Controller
+NetworkPolicy enforcement is handled by kube-router (firewall mode only):
+- **Template**: `ansible/playbooks/templates/networkpolicy-controller/kube-router.yaml.j2`
+- **Mode**: `--run-firewall=true`, `--run-router=false`, `--run-service-proxy=false`
+- **RBAC**: Includes `endpointslices` permission for discovery.k8s.io API group
+
 ### Phase Scope
-This is **Phase 1 only** - infrastructure provisioning. K3s installation, kube-vip setup, and application deployment are future phases. Do not implement Kubernetes components in this phase.
+Phases 1 and 2 are complete. Infrastructure provisioning and K3s cluster with CCM are operational.
 
 ## Tool Requirements
 

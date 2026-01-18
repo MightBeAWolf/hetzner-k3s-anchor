@@ -7,6 +7,12 @@ data "hcloud_ssh_key" "anchor_ssh_key" {
 resource "hcloud_network" "k3s_network" {
   name     = "k3s-network"
   ip_range = "192.168.0.0/16"
+
+  labels = {
+    project     = "anchor"
+    environment = "production"
+    role        = "k3s-network"
+  }
 }
 
 # Network Subnet
