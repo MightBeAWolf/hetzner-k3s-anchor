@@ -49,6 +49,9 @@ packages:
   - fd-find
   - git
   - unzip
+  - wireguard-tools
+  - open-iscsi
+  - ca-certificates
 
 write_files:
   - path: /etc/ssh/sshd_config.d/99-security.conf

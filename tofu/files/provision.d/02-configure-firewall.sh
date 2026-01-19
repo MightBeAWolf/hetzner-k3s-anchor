@@ -21,12 +21,13 @@ firewall-cmd --permanent --zone=public --add-interface="${PUBLIC_IF}"
 firewall-cmd --permanent --zone=public --add-service=ssh
 firewall-cmd --permanent --zone=public --add-service=http
 firewall-cmd --permanent --zone=public --add-service=https
-firewall-cmd --permanent --zone=public --add-port=6443/tcp
+firewall-cmd --permanent --zone=public --add-service=kube-apiserver
 
 # Configure trusted zone for private network interface
 # Allow all traffic on private network for K3s cluster communication
 if [ -n "${PRIVATE_IF}" ]; then
   firewall-cmd --permanent --zone=trusted --add-interface="${PRIVATE_IF}"
+  firewall-cmd --permanent --zone=trusted --add-service=wireguard
   echo "Private network interface ${PRIVATE_IF} added to trusted zone"
 else
   echo "Warning: Could not detect private network interface"

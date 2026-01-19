@@ -166,6 +166,9 @@
           --kubelet-arg=cloud-provider=external
           --write-kubeconfig-mode=0644
           --protect-kernel-defaults=true
+          --flannel-backend=wireguard-native
+          --flannel-iface=enp7s0
+          --flannel-external-ip
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
           --kube-apiserver-arg=audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
           --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
@@ -330,6 +333,9 @@
           --kubelet-arg=cloud-provider=external
           --write-kubeconfig-mode=0644
           --protect-kernel-defaults=true
+          --flannel-backend=wireguard-native
+          --flannel-iface=enp7s0
+          --flannel-external-ip
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
           --kube-apiserver-arg=audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
           --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
