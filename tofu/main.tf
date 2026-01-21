@@ -47,10 +47,9 @@ resource "hcloud_load_balancer_network" "k3s_control_plane" {
 
 # Load Balancer Target - Control Plane Nodes
 resource "hcloud_load_balancer_target" "k3s_control_plane" {
-  count            = 3
-  type             = "server"
+  type             = "label_selector"
   load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
-  server_id        = hcloud_server.k3s_nodes[count.index].id
+  label_selector   = "role=k3s-node"
   use_private_ip   = true
 
   depends_on = [hcloud_load_balancer_network.k3s_control_plane]
@@ -66,6 +65,44 @@ resource "hcloud_load_balancer_service" "k3s_api" {
   health_check {
     protocol = "tcp"
     port     = 6443
+    interval = 10
+    timeout  = 5
+    retries  = 3
+  }
+
+  depends_on = [hcloud_load_balancer_target.k3s_control_plane]
+}
+
+# Load Balancer Service - HTTP (Traefik ingress on 8080)
+resource "hcloud_load_balancer_service" "http" {
+  load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
+  protocol         = "tcp"
+  listen_port      = 80
+  destination_port = 8080
+  proxyprotocol    = true
+
+  health_check {
+    protocol = "tcp"
+    port     = 8080
+    interval = 10
+    timeout  = 5
+    retries  = 3
+  }
+
+  depends_on = [hcloud_load_balancer_target.k3s_control_plane]
+}
+
+# Load Balancer Service - HTTPS (Traefik ingress on 8443)
+resource "hcloud_load_balancer_service" "https" {
+  load_balancer_id = hcloud_load_balancer.k3s_control_plane.id
+  protocol         = "tcp"
+  listen_port      = 443
+  destination_port = 8443
+  proxyprotocol    = true
+
+  health_check {
+    protocol = "tcp"
+    port     = 8443
     interval = 10
     timeout  = 5
     retries  = 3

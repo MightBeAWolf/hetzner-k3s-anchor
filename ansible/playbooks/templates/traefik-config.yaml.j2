@@ -1,0 +1,66 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
+
+    deployment:
+      kind: DaemonSet
+
+    service:
+      type: ClusterIP
+
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 2
+        maxSurge: 0
+
+    securityContext:
+      capabilities:
+        drop: [ALL]
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      readOnlyRootFilesystem: true
+
+    ports:
+      web:
+        port: 8080
+        expose:
+          default: true
+        exposedPort: 80
+        protocol: TCP
+        proxyProtocol:
+          trustedIPs:
+            - 192.168.0.0/16
+            - 10.42.0.0/16
+        redirectTo:
+          port: websecure
+      websecure:
+        port: 8443
+        expose:
+          default: true
+        exposedPort: 443
+        protocol: TCP
+        proxyProtocol:
+          trustedIPs:
+            - 192.168.0.0/16
+            - 10.42.0.0/16
+
+    # Enable Traefik dashboard (secured by Hetzner firewall)
+    api:
+      dashboard: true
+      insecure: true
+
+    ingressRoute:
+      dashboard:
+        enabled: true
+        matchRule: Host(`{{ domain }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+        entryPoints:
+          - websecure
+

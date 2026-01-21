@@ -33,3 +33,19 @@ variable "ssh_key_name" {
   type        = string
 }
 
+# Cloudflare Configuration
+variable "cloudflare_api_token" {
+  description = "Cloudflare API Token with DNS edit permissions"
+  type        = string
+  sensitive   = true
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare Zone ID for the domain"
+  type        = string
+}
+
+variable "domain" {
+  description = "Base domain name"
+  type        = string
+}

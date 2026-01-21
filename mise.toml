@@ -7,6 +7,11 @@ K3S_TOKEN = "op://Private/Anchor-K3s-Cluster/credential"
 K3S_ETCD_SECRET = "op://Private/Anchor-K3s-Cluster/etcd_secret"
 KUBECONFIG = "{{ config_root }}/kubeconfig"
 
+# Cloudflare Configuration
+TF_VAR_cloudflare_api_token = "op://Private/Anchor Cloudflare Config/credential"
+TF_VAR_cloudflare_zone_id = "op://Private/Anchor Cloudflare Config/zone_id"
+TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
+
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"

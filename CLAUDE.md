@@ -211,12 +211,6 @@ The cluster uses Hetzner CCM for cloud provider integration:
   - `00-hcloud-secret.yaml.j2` - API token and network name
   - `10-hcloud-ccm.yaml.j2` - ServiceAccount, RBAC, and Deployment
 
-### kube-router NetworkPolicy Controller
-NetworkPolicy enforcement is handled by kube-router (firewall mode only):
-- **Template**: `ansible/playbooks/templates/networkpolicy-controller/kube-router.yaml.j2`
-- **Mode**: `--run-firewall=true`, `--run-router=false`, `--run-service-proxy=false`
-- **RBAC**: Includes `endpointslices` permission for discovery.k8s.io API group
-
 ### Phase Scope
 Phases 1 and 2 are complete. Infrastructure provisioning and K3s cluster with CCM are operational.
 

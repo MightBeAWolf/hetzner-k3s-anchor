@@ -22,3 +22,17 @@ output "node_names" {
   description = "Names of all K3s nodes"
   value       = hcloud_server.k3s_nodes[*].name
 }
+
+# DNS Outputs
+output "domain" {
+  description = "Base domain name"
+  value       = var.domain
+}
+
+output "dns_records" {
+  description = "DNS records created in Cloudflare"
+  value = {
+    root     = "${var.domain} -> ${hcloud_load_balancer.k3s_control_plane.ipv4}"
+    wildcard = "*.${var.domain} -> ${hcloud_load_balancer.k3s_control_plane.ipv4}"
+  }
+}

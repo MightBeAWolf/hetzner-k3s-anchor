@@ -21,6 +21,9 @@ k3s_version: "v1.31.4+k3s1"
 hcloud_ccm_version: "v1.29.0"
 hcloud_location: "hel1"
 
+# Domain (from 1Password via TF_VAR_domain)
+domain: "{{ lookup('env', 'TF_VAR_domain') }}"
+
 # System settings
 timezone: UTC
 

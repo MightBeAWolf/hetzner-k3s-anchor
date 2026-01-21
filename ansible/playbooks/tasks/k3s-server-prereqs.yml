@@ -1,0 +1,80 @@
+---
+# Common prerequisites for K3s server nodes
+# Include this in both init and join plays
+
+- name: Check if K3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Download K3s installation script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+  when: not k3s_binary.stat.exists
+
+- name: Ensure k3s encryption config directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/cred
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Deploy k3s etcd encryption configuration
+  ansible.builtin.template:
+    src: etcd-encryption-config.yml.j2
+    dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
+    owner: root
+    group: root
+    mode: '0600'
+  register: k3s_encryption_config
+
+- name: Create audit log directory
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/logs
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Deploy API server audit policy
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: /var/lib/rancher/k3s/server/audit.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Deploy EventRateLimit configuration
+  ansible.builtin.template:
+    src: event-rate-limit.yaml.j2
+    dest: /var/lib/rancher/k3s/server/event-rate-limit.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Deploy PSA configuration
+  ansible.builtin.template:
+    src: psa.yaml.j2
+    dest: /var/lib/rancher/k3s/server/psa.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Ensure K3s manifests directory exists
+  ansible.builtin.file:
+    path: /var/lib/rancher/k3s/server/manifests
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy Traefik HelmChartConfig (DaemonSet + HostPort)
+  ansible.builtin.template:
+    src: traefik-config.yaml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    owner: root
+    group: root
+    mode: '0644'

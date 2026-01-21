@@ -10,147 +10,78 @@
       ansible.builtin.assert:
         that:
           - lookup('env', 'K3S_TOKEN') | length > 0
-        fail_msg: "K3S_TOKEN environment variable must be set. Generate with: openssl rand -hex 32"
-        success_msg: "K3S_TOKEN is configured"
+        fail_msg: "K3S_TOKEN environment variable must be set"
 
     - name: Verify K3S_ETCD_SECRET is set
       ansible.builtin.assert:
         that:
           - lookup('env', 'K3S_ETCD_SECRET') | length > 0
-        fail_msg: "K3S_ETCD_SECRET environment variable must be set. Generate with: openssl rand -hex 32"
-        success_msg: "K3S_ETCD_SECRET is configured"
+        fail_msg: "K3S_ETCD_SECRET environment variable must be set"
 
-    - name: Fetch Load Balancer from Hetzner Cloud by label
+    - name: Fetch Load Balancer from Hetzner Cloud
       hetzner.hcloud.load_balancer_info:
         label_selector: "project=anchor,role=k3s-control-plane"
       register: hcloud_load_balancers
       no_log: true
 
-    - name: Verify exactly one Load Balancer found
+    - name: Verify Load Balancer found
       ansible.builtin.assert:
         that:
           - hcloud_load_balancers.hcloud_load_balancer_info | length == 1
-        fail_msg: "Expected exactly 1 Load Balancer with labels project=anchor,role=k3s-control-plane, found {{ hcloud_load_balancers.hcloud_load_balancer_info | length }}"
+        fail_msg: "Expected 1 Load Balancer with project=anchor,role=k3s-control-plane"
 
     - name: Set Load Balancer IP fact
       ansible.builtin.set_fact:
         k3s_control_plane_endpoint: "{{ hcloud_load_balancers.hcloud_load_balancer_info[0].ipv4_address }}"
         cacheable: true
 
-    - name: Fetch Hetzner Cloud Network information
+    - name: Fetch Hetzner Cloud Network
       hetzner.hcloud.network_info:
         label_selector: "project=anchor"
       register: hcloud_networks
       no_log: true
 
-    - name: Verify exactly one network found
+    - name: Verify network found
       ansible.builtin.assert:
         that:
           - hcloud_networks.hcloud_network_info | length == 1
-        fail_msg: "Expected exactly 1 network with label project=anchor, found {{ hcloud_networks.hcloud_network_info | length }}"
+        fail_msg: "Expected 1 network with project=anchor"
 
-    - name: Set Hetzner Network fact
+    - name: Set network fact
       ansible.builtin.set_fact:
         hcloud_network_name: "{{ hcloud_networks.hcloud_network_info[0].name }}"
         cacheable: true
 
-    - name: Display deployment configuration
+    - name: Display configuration
       ansible.builtin.debug:
-        msg:
-          - "Control Plane Endpoint: {{ k3s_control_plane_endpoint }}"
-          - "Hetzner Network: {{ hcloud_network_name }}"
-          - "Ready to deploy K3s cluster"
+        msg: "Control Plane: {{ k3s_control_plane_endpoint }} | Network: {{ hcloud_network_name }}"
 
-- name: Initialize K3s Cluster on First Node
+- name: Initialize K3s Cluster
   hosts: k3s-converged-node-01
   become: true
   gather_facts: true
   vars:
     k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
+  vars_files:
+    - vars/k3s-server-args.yml
 
   pre_tasks:
+    - name: Wait for cloud-init to complete
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      timeout: 300
+
     - name: Verify system requirements
       ansible.builtin.assert:
         that:
           - ansible_facts['memtotal_mb'] >= 1024
           - ansible_facts['distribution'] == 'Debian'
-        fail_msg: "System does not meet minimum requirements (1GB RAM, Debian)"
-
-    - name: Check available disk space
-      ansible.builtin.assert:
-        that:
           - ansible_facts['mounts'] | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first > 5368709120
-        fail_msg: "Insufficient disk space (minimum 5GB free required)"
+        fail_msg: "System requirements not met (1GB RAM, Debian, 5GB disk)"
 
   tasks:
-    - name: Check if K3s is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s
-      register: k3s_binary
-
-    - name: Download K3s installation script
-      ansible.builtin.get_url:
-        url: https://get.k3s.io
-        dest: /tmp/k3s-install.sh
-        mode: '0755'
-      when: not k3s_binary.stat.exists
-
-    - name: Ensure k3s encryption config directory exists
-      ansible.builtin.file:
-        path: /var/lib/rancher/k3s/server/cred
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-
-    - name: Deploy k3s etcd encryption configuration
-      ansible.builtin.template:
-        src: etcd-encryption-config.yml.j2
-        dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
-        owner: root
-        group: root
-        mode: '0600'
-      register: k3s_encryption_config
-
-    - name: Define etcd's encryption configuration
-      ansible.builtin.get_url:
-        url: https://get.k3s.io
-        dest: /tmp/k3s-install.sh
-        mode: '0755'
-      when: not k3s_binary.stat.exists
-      no_log: true
-
-    - name: Create audit log directory (CIS requires mode 0700)
-      ansible.builtin.file:
-        path: /var/lib/rancher/k3s/server/logs
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-
-    - name: Deploy API server audit policy
-      ansible.builtin.template:
-        src: audit-policy.yaml.j2
-        dest: /var/lib/rancher/k3s/server/audit.yaml
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Deploy EventRateLimit configuration
-      ansible.builtin.template:
-        src: event-rate-limit.yaml.j2
-        dest: /var/lib/rancher/k3s/server/event-rate-limit.yaml
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Deploy PSA and admission configuration (K3s convention - psa.yaml)
-      ansible.builtin.template:
-        src: psa.yaml.j2
-        dest: /var/lib/rancher/k3s/server/psa.yaml
-        owner: root
-        group: root
-        mode: '0600'
+    - name: Setup K3s server prerequisites
+      ansible.builtin.include_tasks: tasks/k3s-server-prereqs.yml
 
     - name: Install K3s server (cluster init)
       ansible.builtin.command:
@@ -160,31 +91,9 @@
           --node-ip={{ hcloud_private_networks[0]['ip'] }}
           --tls-san={{ k3s_control_plane_endpoint }}
           --tls-san={{ hcloud_private_networks[0]['ip'] }}
-          --disable=servicelb
-          --disable=traefik
-          --disable-cloud-controller
-          --kubelet-arg=cloud-provider=external
-          --write-kubeconfig-mode=0644
-          --protect-kernel-defaults=true
-          --flannel-backend=wireguard-native
-          --flannel-iface=enp7s0
-          --flannel-external-ip
+          --tls-san={{ ansible_host }}
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
-          --kube-apiserver-arg=audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
-          --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
-          --kube-apiserver-arg=audit-log-maxage=30
-          --kube-apiserver-arg=audit-log-maxbackup=5
-          --kube-apiserver-arg=audit-log-maxsize=50
-          --kube-apiserver-arg=enable-admission-plugins=NodeRestriction,EventRateLimit
-          --kube-apiserver-arg=admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml
-          --kube-apiserver-arg=tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
-          --kube-apiserver-arg=service-account-extend-token-expiration=false
-          --kube-controller-manager-arg=terminated-pod-gc-threshold=100
-          --kubelet-arg=streaming-connection-idle-timeout=5m
-          --kubelet-arg=make-iptables-util-chains=true
-          --kubelet-arg=event-qps=0
-          --kubelet-arg=pod-max-pids=1024
-          --kubelet-arg=tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+          {{ k3s_common_args }}
       environment:
         INSTALL_K3S_VERSION: "{{ k3s_version }}"
         K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"
@@ -215,103 +124,39 @@
         path: /tmp/k3s-install.sh
         state: absent
 
-- name: Join Additional Control Plane Nodes
+- name: Join Additional Nodes
   hosts: k3s_nodes:!k3s-converged-node-01
   become: true
   gather_facts: true
-  serial: 1  # Join nodes one at a time
+  serial: 1
   vars:
     k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
+  vars_files:
+    - vars/k3s-server-args.yml
 
   pre_tasks:
+    - name: Wait for cloud-init to complete
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      timeout: 300
+
     - name: Verify system requirements
       ansible.builtin.assert:
         that:
           - ansible_facts['memtotal_mb'] >= 1024
           - ansible_facts['distribution'] == 'Debian'
-        fail_msg: "System does not meet minimum requirements (1GB RAM, Debian)"
-
-    - name: Check available disk space
-      ansible.builtin.assert:
-        that:
           - ansible_facts['mounts'] | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first > 5368709120
-        fail_msg: "Insufficient disk space (minimum 5GB free required)"
+        fail_msg: "System requirements not met (1GB RAM, Debian, 5GB disk)"
 
   tasks:
-    - name: Wait for first node to be ready
+    - name: Wait for first node API
       ansible.builtin.wait_for:
         host: "{{ hostvars[k3s_cluster_init_node]['hcloud_private_networks'][0]['ip'] }}"
         port: 6443
         timeout: 300
 
-    - name: Check if K3s is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/k3s
-      register: k3s_binary
-
-    - name: Download K3s installation script
-      ansible.builtin.get_url:
-        url: https://get.k3s.io
-        dest: /tmp/k3s-install.sh
-        mode: '0755'
-      when: not k3s_binary.stat.exists
-
-    - name: Ensure k3s encryption config directory exists
-      ansible.builtin.file:
-        path: /var/lib/rancher/k3s/server/cred
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-
-    - name: Deploy k3s etcd encryption configuration
-      ansible.builtin.template:
-        src: etcd-encryption-config.yml.j2
-        dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
-        owner: root
-        group: root
-        mode: '0600'
-      register: k3s_encryption_config
-
-    - name: Define etcd's encryption configuration
-      ansible.builtin.get_url:
-        url: https://get.k3s.io
-        dest: /tmp/k3s-install.sh
-        mode: '0755'
-      when: not k3s_binary.stat.exists
-      no_log: true
-
-    - name: Create audit log directory (CIS requires mode 0700)
-      ansible.builtin.file:
-        path: /var/lib/rancher/k3s/server/logs
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
-
-    - name: Deploy API server audit policy
-      ansible.builtin.template:
-        src: audit-policy.yaml.j2
-        dest: /var/lib/rancher/k3s/server/audit.yaml
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Deploy EventRateLimit configuration
-      ansible.builtin.template:
-        src: event-rate-limit.yaml.j2
-        dest: /var/lib/rancher/k3s/server/event-rate-limit.yaml
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Deploy PSA and admission configuration (K3s convention - psa.yaml)
-      ansible.builtin.template:
-        src: psa.yaml.j2
-        dest: /var/lib/rancher/k3s/server/psa.yaml
-        owner: root
-        group: root
-        mode: '0600'
+    - name: Setup K3s server prerequisites
+      ansible.builtin.include_tasks: tasks/k3s-server-prereqs.yml
 
     - name: Check if node is already in cluster
       ansible.builtin.command: k3s kubectl get node {{ inventory_hostname }}
@@ -327,31 +172,9 @@
           --server https://{{ hostvars[k3s_cluster_init_node]['hcloud_private_networks'][0]['ip'] }}:6443
           --node-ip={{ hcloud_private_networks[0]['ip'] }}
           --tls-san={{ k3s_control_plane_endpoint }}
-          --disable=servicelb
-          --disable=traefik
-          --disable-cloud-controller
-          --kubelet-arg=cloud-provider=external
-          --write-kubeconfig-mode=0644
-          --protect-kernel-defaults=true
-          --flannel-backend=wireguard-native
-          --flannel-iface=enp7s0
-          --flannel-external-ip
+          --tls-san={{ ansible_host }}
           --kube-apiserver-arg=encryption-provider-config={{ k3s_encryption_config.dest }}
-          --kube-apiserver-arg=audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log
-          --kube-apiserver-arg=audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml
-          --kube-apiserver-arg=audit-log-maxage=30
-          --kube-apiserver-arg=audit-log-maxbackup=5
-          --kube-apiserver-arg=audit-log-maxsize=50
-          --kube-apiserver-arg=enable-admission-plugins=NodeRestriction,EventRateLimit
-          --kube-apiserver-arg=admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml
-          --kube-apiserver-arg=tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
-          --kube-apiserver-arg=service-account-extend-token-expiration=false
-          --kube-controller-manager-arg=terminated-pod-gc-threshold=100
-          --kubelet-arg=streaming-connection-idle-timeout=5m
-          --kubelet-arg=make-iptables-util-chains=true
-          --kubelet-arg=event-qps=0
-          --kubelet-arg=pod-max-pids=1024
-          --kubelet-arg=tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+          {{ k3s_common_args }}
       environment:
         INSTALL_K3S_VERSION: "{{ k3s_version }}"
         K3S_TOKEN: "{{ lookup('env', 'K3S_TOKEN') }}"
@@ -384,7 +207,7 @@
   vars:
     k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
   tasks:
-    - name: Fetch kubeconfig from first node
+    - name: Fetch kubeconfig
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
       register: kubeconfig_content
@@ -399,41 +222,14 @@
       become: false
       no_log: true
 
-    - name: Display cluster info
+    - name: Show cluster status
       ansible.builtin.command: k3s kubectl get nodes -o wide
       register: cluster_nodes
       changed_when: false
 
-    - name: Show cluster status
+    - name: Display nodes
       ansible.builtin.debug:
         msg: "{{ cluster_nodes.stdout_lines }}"
-
-- name: Deploy hardening manifests to all server nodes
-  hosts: k3s_nodes
-  become: true
-  gather_facts: false
-  tasks:
-    - name: Deploy kube-router NetworkPolicy controller
-      ansible.builtin.template:
-        src: networkpolicy-controller/kube-router.yaml.j2
-        dest: /var/lib/rancher/k3s/server/manifests/kube-router.yaml
-        owner: root
-        group: root
-        mode: '0600'
-
-    - name: Deploy network policy manifests
-      ansible.builtin.template:
-        src: "{{ item }}"
-        dest: "/var/lib/rancher/k3s/server/manifests/{{ item | basename | regex_replace('.j2$', '') }}"
-        owner: root
-        group: root
-        mode: '0600'
-      loop:
-        - networkpolicies/default-deny-all.yaml.j2
-        - networkpolicies/kube-system-policies.yaml.j2
-        - networkpolicies/default-namespace-policy.yaml.j2
-        - networkpolicies/ccm-policy.yaml.j2
-        - serviceaccounts/disable-automount.yaml.j2
 
 - name: Deploy Hetzner Cloud Controller Manager
   hosts: k3s-converged-node-01
@@ -442,85 +238,70 @@
   vars:
     hcloud_network_name: "{{ hostvars['localhost']['hcloud_network_name'] }}"
   tasks:
-    - name: Create temporary directory for CCM manifests
+    - name: Create temp directory for CCM
       ansible.builtin.tempfile:
         state: directory
         prefix: ccm_
       register: ccm_temp_dir
 
-    - name: Template CCM secret manifest
+    - name: Template CCM manifests
       ansible.builtin.template:
-        src: ccm/00-hcloud-secret.yaml.j2
-        dest: "{{ ccm_temp_dir.path }}/00-hcloud-secret.yaml"
+        src: "{{ item.src }}"
+        dest: "{{ ccm_temp_dir.path }}/{{ item.dest }}"
         mode: '0600'
+      loop:
+        - { src: 'ccm/00-hcloud-secret.yaml.j2', dest: '00-hcloud-secret.yaml' }
+        - { src: 'ccm/10-hcloud-ccm.yaml.j2', dest: '10-hcloud-ccm.yaml' }
       no_log: true
 
-    - name: Template CCM deployment manifest
-      ansible.builtin.template:
-        src: ccm/10-hcloud-ccm.yaml.j2
-        dest: "{{ ccm_temp_dir.path }}/10-hcloud-ccm.yaml"
-        mode: '0600'
-
-    - name: Apply CCM manifests with kubectl
+    - name: Apply CCM manifests
       ansible.builtin.command:
         cmd: k3s kubectl apply -f {{ ccm_temp_dir.path }}/
-      register: ccm_apply_result
-      changed_when: "'created' in ccm_apply_result.stdout or 'configured' in ccm_apply_result.stdout"
+      register: ccm_apply
+      changed_when: "'created' in ccm_apply.stdout or 'configured' in ccm_apply.stdout"
 
-    - name: Display CCM apply result
-      ansible.builtin.debug:
-        msg: "{{ ccm_apply_result.stdout_lines }}"
-
-    - name: Clean up temporary CCM manifests
+    - name: Clean up temp directory
       ansible.builtin.file:
         path: "{{ ccm_temp_dir.path }}"
         state: absent
       no_log: true
 
-    - name: Wait for CCM deployment to be ready
+    - name: Wait for CCM rollout
       ansible.builtin.command:
         cmd: k3s kubectl rollout status deployment/hcloud-cloud-controller-manager -n kube-system --timeout=120s
       changed_when: false
       retries: 3
       delay: 10
-      register: ccm_rollout
-      until: ccm_rollout is success
 
 - name: Deploy Hetzner CSI Driver
   hosts: k3s-converged-node-01
   become: true
   gather_facts: false
   tasks:
-    - name: Deploy Hetzner CSI Driver
+    - name: Deploy CSI Driver
       ansible.builtin.command:
         cmd: kubectl apply -f https://raw.githubusercontent.com/hetznercloud/csi-driver/v2.13.0/deploy/kubernetes/hcloud-csi.yml
       environment:
         KUBECONFIG: /etc/rancher/k3s/k3s.yaml
         HCLOUD_VOLUME_DEFAULT_LOCATION: "{{ hcloud_location }}"
       register: csi_install
-      changed_when: 
-        - "'created' in csi_install.stdout or 'configured' in csi_install.stdout"
+      changed_when: "'created' in csi_install.stdout or 'configured' in csi_install.stdout"
 
-- name: Post-deployment instructions
+- name: Post-deployment
   hosts: localhost
   gather_facts: false
   vars:
     k3s_control_plane_endpoint: "{{ hostvars['localhost']['k3s_control_plane_endpoint'] }}"
   tasks:
-    - name: Display kubeconfig instructions
+    - name: Display next steps
       ansible.builtin.debug:
         msg: |
-          ✅ K3s cluster deployed successfully!
-
-          Kubeconfig saved to: kubeconfig
-          Control Plane Endpoint: {{ k3s_control_plane_endpoint }}:6443
+          K3s cluster deployed
+          Kubeconfig: ./kubeconfig
+          API Endpoint: {{ k3s_control_plane_endpoint }}:6443
 
           Next steps:
-          1. Configure kubectl:
-             export KUBECONFIG=./kubeconfig
-
-          2. Verify cluster:
-             kubectl get nodes -o wide
-             kubectl cluster-info
-
-          3. Deploy your workloads!
+          1. export KUBECONFIG=./kubeconfig
+          2. kubectl get nodes
+          3. kubectl apply -f manifests/whoami.yaml
+          4. curl http://whoami.twobitrobit.com
