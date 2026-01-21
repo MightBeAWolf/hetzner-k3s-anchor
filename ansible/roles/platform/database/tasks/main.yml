@@ -1,0 +1,27 @@
+---
+- name: Add CloudNativePG Helm Repo
+  kubernetes.core.helm_repository:
+    name: cnpg
+    repo_url: "https://cloudnative-pg.github.io/charts"
+
+- name: Install CloudNativePG Operator
+  kubernetes.core.helm:
+    name: cnpg
+    chart_ref: cnpg/cloudnative-pg
+    chart_version: "{{ cnpg_version }}"
+    release_namespace: "{{ cnpg_namespace }}"
+    create_namespace: true
+    wait: true
+    update_repo_cache: true
+
+- name: Create Database Namespace
+  kubernetes.core.k8s:
+    name: "{{ postgres_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Deploy Postgres Cluster Manifest
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'cluster.yaml.j2') }}"

@@ -200,6 +200,16 @@
         path: /tmp/k3s-install.sh
         state: absent
 
+- name: Install additional packages
+  hosts: k3s_nodes
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install Python Kubernetes Library
+      ansible.builtin.apt:
+        name: python3-kubernetes
+        state: present
+
 - name: Retrieve kubeconfig
   hosts: k3s-converged-node-01
   become: true

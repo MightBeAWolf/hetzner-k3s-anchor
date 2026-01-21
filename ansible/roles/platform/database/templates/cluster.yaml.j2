@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ postgres_cluster_name }}
+  namespace: {{ postgres_namespace }}
+spec:
+  instances: 3
+  
+  storage:
+    size: 20Gi
+    storageClass: hcloud-volumes
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  
+  bootstrap:
+    initdb:
+      database: default
+      owner: default
+      
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+
+  monitoring:
+    enablePodMonitor: true

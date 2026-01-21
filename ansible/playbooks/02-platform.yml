@@ -1,0 +1,16 @@
+---
+- name: Phase 2 - Platform Layer
+  hosts: k3s_nodes
+  run_once: true
+  become: true
+
+  module_defaults:
+    kubernetes.core.helm:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.helm_repository:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+  roles:
+    - role: platform/database

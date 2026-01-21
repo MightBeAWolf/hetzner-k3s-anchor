@@ -15,6 +15,10 @@ collections:
   - name: ansible.posix
     version: ">=1.5.0"
 
+  # Kuberenetes
+  - name: kubernetes.core
+    version: ">=6.2.0"
+
 # roles:
 #   # Add custom roles from Ansible Galaxy here
 #   # Example:
