@@ -63,4 +63,12 @@ spec:
         matchRule: Host(`{{ domain }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
         entryPoints:
           - websecure
+        tls:
+          secretName: wildcard-{{ domain | replace('.', '-') }}-tls
+
+    # TLS configuration - use wildcard cert from cert-manager as default
+    tlsStore:
+      default:
+        defaultCertificate:
+          secretName: wildcard-{{ domain | replace('.', '-') }}-tls
 

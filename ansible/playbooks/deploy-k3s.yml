@@ -287,6 +287,75 @@
       register: csi_install
       changed_when: "'created' in csi_install.stdout or 'configured' in csi_install.stdout"
 
+- name: Deploy cert-manager
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Deploy cert-manager Helm chart
+      ansible.builtin.template:
+        src: cert-manager/10-helm-chart.yaml.j2
+        dest: /var/lib/rancher/k3s/server/manifests/cert-manager.yaml
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Wait for cert-manager namespace
+      ansible.builtin.command:
+        cmd: k3s kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/cert-manager --timeout=120s
+      changed_when: false
+      retries: 10
+      delay: 10
+      register: ns_ready
+      until: ns_ready is success
+
+    - name: Wait for cert-manager webhook to be ready
+      ansible.builtin.command:
+        cmd: k3s kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=180s
+      changed_when: false
+      retries: 5
+      delay: 15
+      register: webhook_ready
+      until: webhook_ready is success
+
+    - name: Create temp directory for cert-manager config
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: certmanager_
+      register: certmanager_temp_dir
+
+    - name: Template cert-manager configuration
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ certmanager_temp_dir.path }}/{{ item.dest }}"
+        mode: '0600'
+      loop:
+        - { src: 'cert-manager/20-cloudflare-secret.yaml.j2', dest: '20-cloudflare-secret.yaml' }
+        - { src: 'cert-manager/30-cluster-issuer.yaml.j2', dest: '30-cluster-issuer.yaml' }
+        - { src: 'cert-manager/40-wildcard-certificate.yaml.j2', dest: '40-wildcard-certificate.yaml' }
+      no_log: true
+
+    - name: Apply cert-manager configuration
+      ansible.builtin.command:
+        cmd: k3s kubectl apply -f {{ certmanager_temp_dir.path }}/
+      register: certmanager_apply
+      changed_when: "'created' in certmanager_apply.stdout or 'configured' in certmanager_apply.stdout"
+
+    - name: Clean up temp directory
+      ansible.builtin.file:
+        path: "{{ certmanager_temp_dir.path }}"
+        state: absent
+      no_log: true
+
+    - name: Wait for wildcard certificate to be ready
+      ansible.builtin.command:
+        cmd: k3s kubectl wait --for=condition=Ready certificate/wildcard-{{ domain | replace('.', '-') }} -n kube-system --timeout=300s
+      changed_when: false
+      retries: 3
+      delay: 30
+      register: cert_ready
+      until: cert_ready is success
+
 - name: Post-deployment
   hosts: localhost
   gather_facts: false
@@ -304,4 +373,4 @@
           1. export KUBECONFIG=./kubeconfig
           2. kubectl get nodes
           3. kubectl apply -f manifests/whoami.yaml
-          4. curl http://whoami.twobitrobit.com
+          4. curl https://whoami.{{ domain }}

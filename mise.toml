@@ -12,6 +12,9 @@ TF_VAR_cloudflare_api_token = "op://Private/Anchor Cloudflare Config/credential"
 TF_VAR_cloudflare_zone_id = "op://Private/Anchor Cloudflare Config/zone_id"
 TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
 
+# cert-manager Configuration
+CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
+
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"
