@@ -1,0 +1,26 @@
+---
+# Deploy Hetzner Cloud integrations (CCM + CSI)
+# Standalone: ansible-playbook infrastructure/hcloud-integrations.yml
+# Requires: K3s cluster already deployed
+
+- name: Fetch Hetzner Cloud facts
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: "{{ playbook_dir }}/../../roles/infrastructure/hcloud_facts"
+
+- name: Deploy Hetzner Cloud Controller Manager
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  vars:
+    hcloud_network_name: "{{ hostvars['localhost']['hcloud_network_name'] }}"
+  roles:
+    - role: "{{ playbook_dir }}/../../roles/infrastructure/hcloud_ccm"
+
+- name: Deploy Hetzner CSI Driver
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  roles:
+    - role: "{{ playbook_dir }}/../../roles/infrastructure/hcloud_csi"

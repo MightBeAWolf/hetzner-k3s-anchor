@@ -88,6 +88,14 @@ op run -- tofu -chdir=tofu output load_balancer_ip
 op run -- tofu -chdir=tofu output node_names
 ```
 
+### Full Stack Deployment
+```bash
+# Deploy everything with a single 1Password prompt
+mise run deploy:full
+```
+
+This runs: tofu apply → K3s cluster → Hetzner integrations → cert-manager → platform → developer tools
+
 ### Ansible Operations
 ```bash
 # View dynamic inventory from Hetzner Cloud
@@ -99,11 +107,19 @@ mise run ansible:ping
 # Update SSH known_hosts with current server fingerprints
 mise run ansible:update-known-hosts
 
-# Deploy K3s HA cluster
+# Deploy complete K3s infrastructure (cluster + Hetzner integrations + cert-manager)
 mise run ansible:deploy-k3s
 
+# Deploy individual infrastructure components
+mise run ansible:deploy-cluster       # K3s HA cluster only
+mise run ansible:deploy-hcloud        # Hetzner CCM + CSI only
+mise run ansible:deploy-cert-manager  # cert-manager only
+
+# Deploy platform services
+mise run ansible:deploy-platform      # Database (CloudNativePG)
+
 # Run a specific playbook
-mise run ansible:run playbooks/your-playbook.yml
+mise run ansible:run playbooks/infrastructure/k3s-cluster.yml
 ```
 
 ### Development Workflow
@@ -190,10 +206,42 @@ value = [for server in hcloud_server.k3s_nodes : tolist(server.network)[0].ip]
 - `type_cx23`: Grouped by server type
 - `status_running`: Grouped by status
 
+### Ansible Role-Based Infrastructure
+The infrastructure deployment uses a modular role-based architecture:
+
+**Playbook Structure**:
+```
+ansible/playbooks/
+├── 01-infrastructure.yml              # Orchestrator (imports sub-playbooks)
+├── 02-platform.yml                    # Platform services (database)
+├── infrastructure/
+│   ├── k3s-cluster.yml               # K3s HA cluster (can run standalone)
+│   ├── hcloud-integrations.yml       # Hetzner CCM + CSI (can run standalone)
+│   └── cert-manager.yml              # TLS certificates (can run standalone)
+└── maintenance/
+    ├── ping.yml                      # Connectivity test
+    ├── uninstall-k3s.yml             # Cluster teardown
+    └── update-known-hosts.yml        # SSH key management
+```
+
+**Infrastructure Roles** (`ansible/roles/infrastructure/`):
+- `hcloud_facts` - Fetches Load Balancer IP and network name from Hetzner API
+- `k3s_server` - K3s installation with CIS hardening (handles init + join)
+- `k3s_kubeconfig` - Retrieves and saves kubeconfig locally
+- `hcloud_ccm` - Hetzner Cloud Controller Manager deployment
+- `hcloud_csi` - Hetzner CSI Driver for persistent volumes
+- `cert_manager` - cert-manager with Let's Encrypt and Cloudflare DNS-01
+
+**Platform Roles** (`ansible/roles/platform/`):
+- `database` - CloudNativePG PostgreSQL cluster
+
+**System Roles** (`ansible/roles/system/`):
+- `helm` - Helm installation
+
 ### K3s etcd Encryption
 The cluster implements encryption-at-rest for Kubernetes secrets in etcd using AES-CBC encryption:
 - **Encryption Key**: Managed via `K3S_ETCD_SECRET` environment variable in 1Password
-- **Configuration**: Template at `ansible/playbooks/templates/etcd-encryption-config.yml.j2`
+- **Configuration**: Template at `ansible/roles/infrastructure/k3s_server/templates/etcd-encryption-config.yml.j2`
 - **Deployment Location**: `/var/lib/rancher/k3s/server/cred/encryption-config.yml` (mode 0600)
 - **K3s Integration**: Applied via `--kube-apiserver-arg=encryption-provider-config` flag
 - **Resources Encrypted**: All Kubernetes Secret resources
@@ -207,9 +255,10 @@ The cluster uses Hetzner CCM for cloud provider integration:
 - **Location**: Configured via `HCLOUD_LOAD_BALANCERS_LOCATION` environment variable
 - **Features**: Node lifecycle management, LoadBalancer service provisioning, route management
 - **Network Discovery**: Uses label selector `project=anchor` to find the Hetzner network
-- **Templates**: Located in `ansible/playbooks/templates/ccm/`
-  - `00-hcloud-secret.yaml.j2` - API token and network name
-  - `10-hcloud-ccm.yaml.j2` - ServiceAccount, RBAC, and Deployment
+- **Role**: `ansible/roles/infrastructure/hcloud_ccm/`
+- **Templates**:
+  - `secret.yaml.j2` - API token and network name
+  - `deployment.yaml.j2` - ServiceAccount, RBAC, and Deployment
 
 ### Phase Scope
 Phases 1 and 2 are complete. Infrastructure provisioning and K3s cluster with CCM are operational.

@@ -1,6 +1,5 @@
 ---
-# Common prerequisites for K3s server nodes
-# Include this in both init and join plays
+# K3s server prerequisites - configuration files and directories
 
 - name: Check if K3s is already installed
   ansible.builtin.stat:
@@ -10,22 +9,22 @@
 - name: Download K3s installation script
   ansible.builtin.get_url:
     url: https://get.k3s.io
-    dest: /tmp/k3s-install.sh
+    dest: "{{ k3s_install_script_path }}"
     mode: '0755'
   when: not k3s_binary.stat.exists
 
-- name: Ensure k3s encryption config directory exists
+- name: Ensure K3s encryption config directory exists
   ansible.builtin.file:
-    path: /var/lib/rancher/k3s/server/cred
+    path: "{{ k3s_cred_dir }}"
     state: directory
     owner: root
     group: root
     mode: '0700'
 
-- name: Deploy k3s etcd encryption configuration
+- name: Deploy K3s etcd encryption configuration
   ansible.builtin.template:
     src: etcd-encryption-config.yml.j2
-    dest: /var/lib/rancher/k3s/server/cred/encryption-config.yml
+    dest: "{{ k3s_cred_dir }}/encryption-config.yml"
     owner: root
     group: root
     mode: '0600'
@@ -33,7 +32,7 @@
 
 - name: Create audit log directory
   ansible.builtin.file:
-    path: /var/lib/rancher/k3s/server/logs
+    path: "{{ k3s_logs_dir }}"
     state: directory
     owner: root
     group: root
@@ -42,7 +41,7 @@
 - name: Deploy API server audit policy
   ansible.builtin.template:
     src: audit-policy.yaml.j2
-    dest: /var/lib/rancher/k3s/server/audit.yaml
+    dest: "{{ k3s_config_dir }}/audit.yaml"
     owner: root
     group: root
     mode: '0600'
@@ -50,7 +49,7 @@
 - name: Deploy EventRateLimit configuration
   ansible.builtin.template:
     src: event-rate-limit.yaml.j2
-    dest: /var/lib/rancher/k3s/server/event-rate-limit.yaml
+    dest: "{{ k3s_config_dir }}/event-rate-limit.yaml"
     owner: root
     group: root
     mode: '0600'
@@ -58,14 +57,14 @@
 - name: Deploy PSA configuration
   ansible.builtin.template:
     src: psa.yaml.j2
-    dest: /var/lib/rancher/k3s/server/psa.yaml
+    dest: "{{ k3s_config_dir }}/psa.yaml"
     owner: root
     group: root
     mode: '0600'
 
 - name: Ensure K3s manifests directory exists
   ansible.builtin.file:
-    path: /var/lib/rancher/k3s/server/manifests
+    path: "{{ k3s_manifests_dir }}"
     state: directory
     owner: root
     group: root
@@ -74,7 +73,7 @@
 - name: Deploy Traefik HelmChartConfig (DaemonSet + HostPort)
   ansible.builtin.template:
     src: traefik-config.yaml.j2
-    dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+    dest: "{{ k3s_manifests_dir }}/traefik-config.yaml"
     owner: root
     group: root
     mode: '0644'

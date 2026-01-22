@@ -18,7 +18,14 @@ OpenTofu and Hetzner Cloud.
 │   ├── requirements.yml     # Ansible Galaxy dependencies
 │   ├── inventory/           # Dynamic inventory from Hetzner Cloud
 │   ├── playbooks/           # Ansible playbooks
+│   │   ├── 01-infrastructure.yml  # K3s cluster deployment
+│   │   ├── 02-platform.yml        # Platform services (database)
+│   │   ├── infrastructure/        # Modular infrastructure playbooks
+│   │   └── maintenance/           # Maintenance playbooks
 │   └── roles/               # Custom Ansible roles
+│       ├── infrastructure/  # K3s, CCM, CSI, cert-manager
+│       ├── platform/        # Database roles
+│       └── system/          # System utilities (Helm)
 ├── mise.toml                # Development workflow tools
 ├── .pre-commit-config.yaml  # Code quality hooks
 ├── .yamllint.yaml           # YAML linting configuration
@@ -44,9 +51,14 @@ mise install
 ```
 
 ### 2. Configure 1Password Secrets
-Store your secrets in 1Password:
-- **Hetzner Cloud Token**: `op://Private/6agth7vqswxvzx7lwmjqyzm25y/credential`
-- **SSH Key Name**: `op://Private/6agth7vqswxvzx7lwmjqyzm25y/ssh_key_name`
+Store your secrets in 1Password (paths configured in `mise.toml`):
+- **Hetzner Cloud Token**: `op://Private/quacttvsaylcxc3lhcvta7l2oy/password`
+- **SSH Key Name**: `op://Private/6agth7vqswxvzx7lwmjqyzm25y/name`
+- **K3s Cluster Token**: `op://Private/Anchor-K3s-Cluster/credential`
+- **K3s etcd Secret**: `op://Private/Anchor-K3s-Cluster/etcd_secret`
+- **Cloudflare API Token**: `op://Private/Anchor Cloudflare Config/credential`
+- **Cloudflare Zone ID**: `op://Private/Anchor Cloudflare Config/zone_id`
+- **Domain**: `op://Private/Anchor Cloudflare Config/domain`
 
 Environment variables are automatically configured via `mise.toml` and loaded through `op run`.
 
@@ -78,8 +90,11 @@ This will:
 
 ### Kubernetes Components
 - **K3s** (v1.31.4+k3s1) - Lightweight Kubernetes distribution
+- **Flannel** (wireguard-native) - CNI with encrypted node traffic
 - **Hetzner Cloud Controller Manager** - Node lifecycle and LoadBalancer provisioning
-- **kube-router** - NetworkPolicy controller
+- **Hetzner CSI Driver** - Persistent volume provisioning
+- **cert-manager** - TLS certificate management with Let's Encrypt
+- **Traefik** - Ingress controller (DaemonSet with HostPort)
 - **etcd encryption** - Secrets encrypted at rest with AES-CBC
 
 ### Security Configuration
@@ -95,6 +110,12 @@ This will:
 - **Internal**: Full access within private network
 
 ## Usage
+
+### Full Stack Deployment
+```bash
+# Deploy everything (infrastructure + K3s + platform + dev tools) with single prompt
+mise run deploy:full
+```
 
 ### Deploy Infrastructure
 ```bash
@@ -131,11 +152,19 @@ mise run ansible:ping
 # Update SSH known_hosts
 mise run ansible:update-known-hosts
 
-# Deploy K3s HA cluster
+# Deploy complete K3s infrastructure
 mise run ansible:deploy-k3s
 
+# Deploy individual components
+mise run ansible:deploy-cluster       # K3s HA cluster only
+mise run ansible:deploy-hcloud        # Hetzner CCM + CSI only
+mise run ansible:deploy-cert-manager  # cert-manager only
+
+# Deploy platform services
+mise run ansible:deploy-platform      # Database (CloudNativePG)
+
 # Run a custom playbook
-mise run ansible:run playbooks/your-playbook.yml
+mise run ansible:run playbooks/infrastructure/k3s-cluster.yml
 ```
 
 See [ansible/README.md](ansible/README.md) for detailed Ansible documentation.
@@ -218,7 +247,7 @@ mise run ansible:ping
 **Note:** This task automatically:
 - Clears Ansible fact cache
 - Recreates all three servers
-- Reassigns the floating IP to the new node-01
+- Re-registers nodes with the Load Balancer
 - Updates SSH fingerprints in ~/.ssh/known_hosts
 
 ### Option 2: Use Ansible for Configuration Changes
@@ -254,7 +283,7 @@ firewall-cmd --reload
 After infrastructure is provisioned, deploy the K3s HA cluster:
 
 ```bash
-# Deploy K3s to all nodes (includes CCM and kube-router)
+# Deploy K3s to all nodes (includes CCM, CSI, and cert-manager)
 mise run ansible:deploy-k3s
 
 # Configure kubeconfig (automatically saved to ./kubeconfig)
@@ -284,6 +313,7 @@ K3s cluster is now operational. Next phases:
 
 - Pod Security Admission enforces "restricted" policy
 - etcd secrets encrypted at rest with AES-CBC
-- NetworkPolicies enforced via kube-router
+- Node traffic encrypted via Flannel wireguard-native
+- TLS certificates managed by cert-manager with Let's Encrypt
 - Google Authenticator 2FA configuration deferred for manual setup
 - All firewall rules use allow-list approach

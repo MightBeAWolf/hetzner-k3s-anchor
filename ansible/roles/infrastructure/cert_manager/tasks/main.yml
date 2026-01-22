@@ -1,0 +1,121 @@
+---
+# Deploy cert-manager with Let's Encrypt and Cloudflare DNS-01
+# Required variables:
+#   - cert_manager_version: cert-manager version (from group_vars)
+#   - cert_manager_email: Email for Let's Encrypt (from group_vars)
+#   - domain: Domain for wildcard certificate (from group_vars)
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - cert_manager_version is defined
+      - cert_manager_email is defined
+      - domain is defined
+    fail_msg: >-
+      Required: cert_manager_version, cert_manager_email, domain
+
+- name: Deploy cert-manager Helm chart
+  ansible.builtin.template:
+    src: helm-chart.yaml.j2
+    dest: /var/lib/rancher/k3s/server/manifests/cert-manager.yaml
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Wait for cert-manager namespace
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl wait
+      --for=jsonpath='{.status.phase}'=Active
+      namespace/cert-manager --timeout=120s
+  changed_when: false
+  retries: 10
+  delay: 10
+  register: ns_ready
+  until: ns_ready is success
+
+- name: Wait for cert-manager webhook to be ready
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl wait --for=condition=Available
+      deployment/cert-manager-webhook
+      -n cert-manager --timeout=180s
+  changed_when: false
+  retries: 5
+  delay: 15
+  register: webhook_ready
+  until: webhook_ready is success
+
+- name: Create temp directory for cert-manager config
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: certmanager_
+  register: certmanager_temp_dir
+
+- name: Template Cloudflare secret
+  ansible.builtin.template:
+    src: cloudflare-secret.yaml.j2
+    dest: "{{ certmanager_temp_dir.path }}/cloudflare-secret.yaml"
+    mode: '0600'
+  no_log: true
+
+- name: Apply Cloudflare secret
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -f {{ certmanager_temp_dir.path }}/cloudflare-secret.yaml
+  register: secret_apply
+  changed_when: "'created' in secret_apply.stdout or 'configured' in secret_apply.stdout"
+
+- name: Template ClusterIssuers
+  ansible.builtin.template:
+    src: cluster-issuer.yaml.j2
+    dest: "{{ certmanager_temp_dir.path }}/cluster-issuer.yaml"
+    mode: '0600'
+
+- name: Apply ClusterIssuers
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -f {{ certmanager_temp_dir.path }}/cluster-issuer.yaml
+  register: issuer_apply
+  changed_when: "'created' in issuer_apply.stdout or 'configured' in issuer_apply.stdout"
+
+- name: Wait for ClusterIssuer to be ready
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl wait --for=condition=Ready
+      clusterissuer/letsencrypt-production --timeout=120s
+  changed_when: false
+  retries: 5
+  delay: 10
+  register: issuer_ready
+  until: issuer_ready is success
+
+- name: Template wildcard certificate
+  ansible.builtin.template:
+    src: wildcard-certificate.yaml.j2
+    dest: "{{ certmanager_temp_dir.path }}/wildcard-certificate.yaml"
+    mode: '0600'
+
+- name: Apply wildcard certificate
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -f {{ certmanager_temp_dir.path }}/wildcard-certificate.yaml
+  register: cert_apply
+  changed_when: "'created' in cert_apply.stdout or 'configured' in cert_apply.stdout"
+
+- name: Clean up temp directory
+  ansible.builtin.file:
+    path: "{{ certmanager_temp_dir.path }}"
+    state: absent
+  no_log: true
+
+- name: Wait for wildcard certificate to be ready
+  vars:
+    cert_name: "wildcard-{{ domain | replace('.', '-') }}"
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl wait --for=condition=Ready
+      certificate/{{ cert_name }}
+      -n kube-system --timeout=300s
+  changed_when: false
+  retries: 3
+  delay: 30
+  register: cert_ready
+  until: cert_ready is success

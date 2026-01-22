@@ -1,0 +1,6 @@
+---
+# cert-manager defaults
+
+# cert_manager_version is defined in group_vars/all.yml
+# cert_manager_email is defined in group_vars/all.yml
+# domain is defined in group_vars/all.yml

@@ -15,6 +15,10 @@ TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
 # cert-manager Configuration
 CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
 
+# Ansible Configuration
+ANSIBLE_CONFIG = "{{ config_root }}/ansible/ansible.cfg"
+ANSIBLE_FORCE_COLOR = "1"
+
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"
@@ -22,6 +26,7 @@ CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
 "uv" = "latest"
 "pipx:ansible-core" = { version = "latest", uvx_args = "--with requests --with hcloud" }
 "kubectl" = "latest"
+"yamllint" = "latest"
 
 # Setup tasks
 [tasks.setup]
@@ -107,30 +112,73 @@ run = "op run -- ansible-inventory --list"
 [tasks."ansible:ping"]
 description = "Test Ansible connectivity to all hosts"
 dir = "ansible"
-run = "op run -- ansible-playbook playbooks/ping.yml"
+run = "op run -- ansible-playbook playbooks/maintenance/ping.yml"
 
 [tasks."ansible:update-known-hosts"]
 description = "Update SSH known_hosts with current server fingerprints"
 dir = "ansible"
-run = "op run -- ansible-playbook playbooks/update-known-hosts.yml"
+run = "op run -- ansible-playbook playbooks/maintenance/update-known-hosts.yml"
 
 [tasks."ansible:run"]
 description = "Run an Ansible playbook"
-usage = 'arg "<playbook>" help="Path to playbook (e.g., playbooks/ping.yml)"'
+usage = 'arg "<playbook>" help="Path to playbook (e.g., playbooks/maintenance/ping.yml)"'
 dir = "ansible"
 run = "op run -- ansible-playbook ${usage_playbook}"
 
+# Infrastructure deployment (full stack)
 [tasks."ansible:deploy-k3s"]
-description = "Deploy K3s HA cluster to all nodes"
+description = "Deploy complete K3s infrastructure (cluster + integrations + cert-manager)"
 dir = "ansible"
-run = "op run -- ansible-playbook playbooks/deploy-k3s.yml"
+run = "op run -- ansible-playbook playbooks/01-infrastructure.yml"
 
-[tasks."ansible:verify-ccm"]
-description = "Verify Hetzner Cloud Controller Manager installation"
+# Infrastructure components (can run individually)
+[tasks."ansible:deploy-cluster"]
+description = "Deploy K3s HA cluster only"
 dir = "ansible"
-run = "op run -- ansible-playbook playbooks/verify-ccm.yml"
+run = "op run -- ansible-playbook playbooks/infrastructure/k3s-cluster.yml"
+
+[tasks."ansible:deploy-hcloud"]
+description = "Deploy Hetzner Cloud integrations (CCM + CSI)"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/infrastructure/hcloud-integrations.yml"
+
+[tasks."ansible:deploy-cert-manager"]
+description = "Deploy cert-manager with Let's Encrypt"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/infrastructure/cert-manager.yml"
+
+# Platform deployment
+[tasks."ansible:deploy-platform"]
+description = "Deploy platform services (database)"
+dir = "ansible"
+run = "op run -- ansible-playbook playbooks/02-platform.yml"
 
 [tasks."ansible:uninstall-k3s"]
 description = "Uninstall K3s from all nodes"
 dir = "ansible"
-run = "op run -- ansible-playbook playbooks/uninstall-k3s.yml"
+run = "op run -- ansible-playbook playbooks/maintenance/uninstall-k3s.yml"
+
+# Full stack deployment
+[tasks."deploy:full"]
+description = "Deploy full stack: infrastructure + K3s + platform + developer tools"
+run = """
+op run -- bash -c '
+  set -e
+  echo "==> Clearing Ansible fact cache..."
+  rm -rf /tmp/ansible_facts
+
+  echo "==> Deploying infrastructure with OpenTofu..."
+  tofu -chdir=tofu apply -auto-approve
+
+  echo "==> Deploying K3s cluster + Hetzner integrations + cert-manager..."
+  ansible-playbook ansible/playbooks/01-infrastructure.yml
+
+  echo "==> Deploying platform services (database)..."
+  ansible-playbook ansible/playbooks/02-platform.yml
+
+  echo "==> Deploying developer tooling..."
+  ansible-playbook ansible/playbooks/developer_tooling.yml
+
+  echo "==> Full stack deployment complete!"
+'
+"""

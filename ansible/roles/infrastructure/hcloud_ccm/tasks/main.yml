@@ -1,0 +1,56 @@
+---
+# Deploy Hetzner Cloud Controller Manager
+# Required variables:
+#   - hcloud_network_name: Hetzner network name
+#   - hcloud_ccm_version: CCM version (from group_vars)
+#   - hcloud_location: Hetzner location (from group_vars)
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - hcloud_network_name is defined
+      - hcloud_ccm_version is defined
+      - hcloud_location is defined
+    fail_msg: >-
+      Required: hcloud_network_name, hcloud_ccm_version, hcloud_location
+
+- name: Create temp directory for CCM manifests
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: ccm_
+  register: ccm_temp_dir
+
+- name: Template CCM manifests
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ ccm_temp_dir.path }}/{{ item.dest }}"
+    mode: '0600'
+  loop:
+    - src: secret.yaml.j2
+      dest: 00-hcloud-secret.yaml
+    - src: deployment.yaml.j2
+      dest: 10-hcloud-ccm.yaml
+  no_log: true
+
+- name: Apply CCM manifests
+  ansible.builtin.command:
+    cmd: k3s kubectl apply -f {{ ccm_temp_dir.path }}/
+  register: ccm_apply
+  changed_when: >-
+    'created' in ccm_apply.stdout or 'configured' in ccm_apply.stdout
+
+- name: Clean up temp directory
+  ansible.builtin.file:
+    path: "{{ ccm_temp_dir.path }}"
+    state: absent
+  no_log: true
+
+- name: Wait for CCM rollout
+  ansible.builtin.command:
+    cmd: >-
+      k3s kubectl rollout status
+      deployment/hcloud-cloud-controller-manager
+      -n kube-system --timeout=120s
+  changed_when: false
+  retries: 3
+  delay: 10

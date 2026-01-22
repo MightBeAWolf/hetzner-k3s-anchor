@@ -1,0 +1,6 @@
+---
+# Hetzner CSI Driver defaults
+
+hcloud_csi_version: "v2.13.0"
+# yamllint disable-line rule:line-length
+hcloud_csi_manifest_url: "https://raw.githubusercontent.com/hetznercloud/csi-driver/{{ hcloud_csi_version }}/deploy/kubernetes/hcloud-csi.yml"

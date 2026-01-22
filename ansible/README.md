@@ -25,15 +25,34 @@ op --version
 ```
 ansible/
 ├── ansible.cfg                 # Ansible configuration
+├── requirements.yml            # Ansible Galaxy dependencies
 ├── inventory/
 │   ├── hcloud.yml             # Dynamic inventory from Hetzner Cloud
-│   ├── group_vars/
-│   │   └── all.yml            # Global variables for all hosts
-│   └── host_vars/             # Host-specific variables (optional)
+│   └── group_vars/
+│       └── all.yml            # Global variables for all hosts
 ├── playbooks/
-│   ├── ping.yml               # Test connectivity
-│   └── update-known-hosts.yml # Update SSH fingerprints
-└── roles/                     # Custom roles (future)
+│   ├── 01-infrastructure.yml  # Full infrastructure deployment (orchestrator)
+│   ├── 02-platform.yml        # Platform services (database)
+│   ├── infrastructure/        # Modular infrastructure playbooks
+│   │   ├── k3s-cluster.yml        # K3s HA cluster
+│   │   ├── hcloud-integrations.yml # Hetzner CCM + CSI
+│   │   └── cert-manager.yml       # TLS certificate management
+│   └── maintenance/           # Maintenance playbooks
+│       ├── ping.yml               # Test connectivity
+│       ├── uninstall-k3s.yml      # Cluster teardown
+│       └── update-known-hosts.yml # Update SSH fingerprints
+└── roles/
+    ├── infrastructure/        # Infrastructure roles
+    │   ├── hcloud_facts/          # Fetch Hetzner Cloud facts
+    │   ├── k3s_server/            # K3s installation (CIS hardened)
+    │   ├── k3s_kubeconfig/        # Kubeconfig retrieval
+    │   ├── hcloud_ccm/            # Hetzner Cloud Controller Manager
+    │   ├── hcloud_csi/            # Hetzner CSI Driver
+    │   └── cert_manager/          # cert-manager with Let's Encrypt
+    ├── platform/              # Platform roles
+    │   └── database/              # CloudNativePG PostgreSQL
+    └── system/                # System roles
+        └── helm/                  # Helm installation
 ```
 
 ## Quick Start
@@ -43,9 +62,16 @@ ansible/
    mise run setup
    ```
 
-2. **Deploy infrastructure** (SSH fingerprints updated automatically):
+2. **Deploy full stack** (single 1Password prompt):
    ```bash
-   mise run tofu:apply
+   mise run deploy:full
+   ```
+
+   Or deploy step-by-step:
+   ```bash
+   mise run tofu:apply           # Infrastructure
+   mise run ansible:deploy-k3s   # K3s + integrations
+   mise run ansible:deploy-platform  # Database
    ```
 
 3. **Test connectivity**:
@@ -69,36 +95,43 @@ Verify Ansible can connect to all hosts:
 mise run ansible:ping
 ```
 
-### Update SSH Known Hosts (Manual)
+### Deploy Infrastructure
 
-SSH fingerprints are automatically updated by OpenTofu when infrastructure changes. However, you can manually update them if needed:
-```bash
-mise run ansible:update-known-hosts
-```
-
-### Deploy K3s Cluster
-
-Deploy a 3-node HA K3s cluster with embedded etcd:
+Deploy the complete K3s infrastructure stack:
 ```bash
 mise run ansible:deploy-k3s
 ```
 
-This will:
-- Install K3s on all nodes
-- Configure HA with embedded etcd
-- Set up TLS SANs for the floating IP
-- Retrieve kubeconfig to `/tmp/k3s-kubeconfig.yaml`
+This orchestrates three sub-playbooks:
+1. `infrastructure/k3s-cluster.yml` - K3s HA cluster with embedded etcd
+2. `infrastructure/hcloud-integrations.yml` - Hetzner CCM and CSI Driver
+3. `infrastructure/cert-manager.yml` - TLS certificates with Let's Encrypt
 
-After deployment:
+### Deploy Individual Components
+
+Each infrastructure component can be deployed independently:
 ```bash
-export KUBECONFIG=/tmp/k3s-kubeconfig.yaml
-kubectl get nodes
+# K3s cluster only
+mise run ansible:deploy-cluster
+
+# Hetzner CCM + CSI only (requires K3s)
+mise run ansible:deploy-hcloud
+
+# cert-manager only (requires K3s)
+mise run ansible:deploy-cert-manager
+```
+
+### Deploy Platform Services
+
+Deploy platform services after infrastructure is ready:
+```bash
+mise run ansible:deploy-platform
 ```
 
 ### Run Custom Playbooks
 
 ```bash
-mise run ansible:run playbooks/your-playbook.yml
+mise run ansible:run playbooks/infrastructure/cert-manager.yml
 ```
 
 ## Dynamic Inventory
@@ -117,6 +150,21 @@ The inventory is dynamically generated from Hetzner Cloud using server labels:
 - **Diffs**: Always shown for transparency
 
 See `ansible.cfg` for full configuration details.
+
+## Role-Based Architecture
+
+Infrastructure deployment uses modular, reusable roles:
+
+| Role | Description |
+|------|-------------|
+| `infrastructure/hcloud_facts` | Fetches Load Balancer IP and network name from Hetzner API |
+| `infrastructure/k3s_server` | K3s installation with CIS hardening (handles init + join) |
+| `infrastructure/k3s_kubeconfig` | Retrieves and saves kubeconfig locally |
+| `infrastructure/hcloud_ccm` | Hetzner Cloud Controller Manager deployment |
+| `infrastructure/hcloud_csi` | Hetzner CSI Driver for persistent volumes |
+| `infrastructure/cert_manager` | cert-manager with Let's Encrypt and Cloudflare DNS-01 |
+| `platform/database` | CloudNativePG PostgreSQL cluster |
+| `system/helm` | Helm installation |
 
 ## Common Tasks
 
@@ -138,5 +186,5 @@ op run -- ansible all -m setup
 
 ```bash
 cd ansible
-op run -- ansible-playbook playbooks/ping.yml --limit k3s-converged-node-01
+op run -- ansible-playbook playbooks/maintenance/ping.yml --limit k3s-converged-node-01
 ```

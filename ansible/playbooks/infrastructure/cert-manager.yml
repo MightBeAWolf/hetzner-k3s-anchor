@@ -1,0 +1,11 @@
+---
+# Deploy cert-manager with Let's Encrypt and Cloudflare DNS-01
+# Standalone: mise run ansible:run playbooks/infrastructure/cert-manager.yml
+# Requires: K3s cluster already deployed
+
+- name: Deploy cert-manager
+  hosts: k3s-converged-node-01
+  become: true
+  gather_facts: false
+  roles:
+    - role: "{{ playbook_dir }}/../../roles/infrastructure/cert_manager"

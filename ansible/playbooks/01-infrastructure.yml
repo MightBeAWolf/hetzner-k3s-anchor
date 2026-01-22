@@ -1,0 +1,38 @@
+---
+# Deploy complete K3s infrastructure
+# Run with: mise run ansible:deploy-k3s
+#
+# This orchestrator imports sub-playbooks that can also run independently:
+#   - infrastructure/k3s-cluster.yml      - K3s HA cluster deployment
+#   - infrastructure/hcloud-integrations.yml - Hetzner CCM + CSI
+#   - infrastructure/cert-manager.yml     - TLS certificate management
+
+- name: Deploy K3s cluster
+  ansible.builtin.import_playbook: infrastructure/k3s-cluster.yml
+
+- name: Deploy Hetzner Cloud integrations
+  ansible.builtin.import_playbook: infrastructure/hcloud-integrations.yml
+
+- name: Deploy cert-manager
+  ansible.builtin.import_playbook: infrastructure/cert-manager.yml
+
+- name: Post-deployment summary
+  hosts: localhost
+  gather_facts: false
+  vars:
+    k3s_control_plane_endpoint: >-
+      {{ hostvars['localhost']['k3s_control_plane_endpoint'] }}
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          K3s cluster deployed successfully
+
+          Kubeconfig: ./kubeconfig
+          API Endpoint: {{ k3s_control_plane_endpoint }}:6443
+
+          Next steps:
+          1. export KUBECONFIG=./kubeconfig
+          2. kubectl get nodes
+          3. kubectl apply -f manifests/whoami.yaml
+          4. curl https://whoami.{{ domain }}
