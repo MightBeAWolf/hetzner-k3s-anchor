@@ -1,0 +1,15 @@
+---
+# LDAP TLS Certificate managed by cert-manager
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: authentik-ldap-tls
+  namespace: "{{ authentik_namespace }}"
+spec:
+  secretName: authentik-ldap-tls
+  issuerRef:
+    name: letsencrypt-production
+    kind: ClusterIssuer
+  commonName: "ldap.{{ lookup('env', 'TF_VAR_domain') }}"
+  dnsNames:
+    - "ldap.{{ lookup('env', 'TF_VAR_domain') }}"

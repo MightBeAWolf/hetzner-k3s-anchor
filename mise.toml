@@ -19,6 +19,19 @@ CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
 ANSIBLE_CONFIG = "{{ config_root }}/ansible/ansible.cfg"
 ANSIBLE_FORCE_COLOR = "1"
 
+# Authentik Secrets
+AUTHENTIK_SECRET_KEY = "op://Private/Anchor Authentik Secrets/secret_key"
+AUTHENTIK_DB_PASSWORD = "op://Private/Anchor Authentik Secrets/db_password"
+
+# SMTP Configuration (Resend.com)
+AUTHENTIK_SMTP_HOST = "op://Private/Anchor SMTP Resend.com API Credentials/hostname"
+AUTHENTIK_SMTP_PORT = "op://Private/Anchor SMTP Resend.com API Credentials/port"
+AUTHENTIK_SMTP_USERNAME = "op://Private/Anchor SMTP Resend.com API Credentials/username"
+AUTHENTIK_SMTP_PASSWORD = "op://Private/Anchor SMTP Resend.com API Credentials/credential"
+
+# LDAP Configuration
+AUTHENTIK_LDAP_BASE_DN = "op://Private/Twobitrobit LDAP/base_dn"
+
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"
@@ -149,7 +162,7 @@ run = "op run -- ansible-playbook playbooks/infrastructure/cert-manager.yml"
 
 # Platform deployment
 [tasks."ansible:deploy-platform"]
-description = "Deploy platform services (database)"
+description = "Deploy platform services (database/identity)"
 dir = "ansible"
 run = "op run -- ansible-playbook playbooks/02-platform.yml"
 

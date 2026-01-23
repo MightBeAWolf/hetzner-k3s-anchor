@@ -1,0 +1,89 @@
+---
+authentik:
+  secret_key: "{{ authentik_secret_key }}"
+  log_level: info
+  postgresql:
+    host: "{{ authentik_db_host }}"
+    port: "{{ authentik_db_port }}"
+    name: "{{ authentik_db_name }}"
+    user: "{{ authentik_db_user }}"
+    password: "{{ authentik_db_password }}"
+  redis:
+    host: ""
+    password: ""
+  email:
+    host: "{{ lookup('env', 'AUTHENTIK_SMTP_HOST') }}"
+    port: {{ lookup('env', 'AUTHENTIK_SMTP_PORT') }}
+    username: "{{ lookup('env', 'AUTHENTIK_SMTP_USERNAME') }}"
+    password: "{{ lookup('env', 'AUTHENTIK_SMTP_PASSWORD') }}"
+    use_tls: false
+    use_ssl: true
+    from: "noreply@{{ lookup('env', 'TF_VAR_domain') }}"
+
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+
+blueprints:
+  configMaps:
+    - authentik-blueprints
+
+# ---------------------------------------------------------------------
+# Server Component
+# ---------------------------------------------------------------------
+server:
+  ingress:
+    enabled: true
+    ingressClassName: "traefik"
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    hosts:
+      - "auth.{{ lookup('env', 'TF_VAR_domain') }}"
+    paths:
+      - "/"
+
+  # Mount blueprint ConfigMap
+  volumes:
+    - name: blueprints-cm
+      configMap:
+        name: authentik-blueprints
+  volumeMounts:
+    - name: blueprints-cm
+      mountPath: /blueprints/mounted/cm-authentik-blueprints
+
+  # POD Level Context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # CONTAINER Level Context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# ---------------------------------------------------------------------
+# Worker Component
+# ---------------------------------------------------------------------
+worker:
+  # POD Level Context
+  securityContext: 
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  # CONTAINER Level Context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL

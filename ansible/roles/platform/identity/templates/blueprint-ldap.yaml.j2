@@ -1,0 +1,52 @@
+# ansible/roles/platform/identity/templates/blueprint-ldap.yaml.j2
+version: 1
+metadata:
+  name: "iac-ldap-outpost"
+  labels:
+    type: "infrastructure"
+
+entries:
+  # 1. Create LDAP Provider
+  - model: authentik_providers_ldap.ldapprovider
+    id: ldap-provider
+    identifiers:
+      name: "LDAP Provider"
+    attrs:
+      # Use the default implicit consent flow
+      authorization_flow: !Find [authentik_flows.flow, [slug, "default-provider-authorization-implicit-consent"]]
+      # Use the default invalidation flow
+      invalidation_flow: !Find [authentik_flows.flow, [slug, "default-provider-invalidation-flow"]]
+      # Base DN for LDAP queries
+      base_dn: "{{ lookup('env', 'AUTHENTIK_LDAP_BASE_DN') }}"
+      # Bind mode: direct executes flow on each bind request
+      bind_mode: "direct"
+      # Search mode: direct queries API for real-time data
+      search_mode: "direct"
+
+  # 2. Create Application for LDAP
+  - model: authentik_core.application
+    id: ldap-application
+    identifiers:
+      slug: "ldap"
+    attrs:
+      name: "LDAP"
+      provider: !KeyOf ldap-provider
+      policy_engine_mode: "any"
+
+  # 3. Create LDAP Outpost
+  - model: authentik_outposts.outpost
+    identifiers:
+      name: "ldap-outpost"
+    attrs:
+      type: "ldap"
+      # Link to providers this outpost serves
+      providers:
+        - !KeyOf ldap-provider
+      # Link to the integration that spawns pods in K8s
+      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, "Local Kubernetes Cluster"]]
+      # Configuration passed to the Outpost Pods
+      config:
+        log_level: info
+        # Internal cluster URL for the outpost to talk back to the server
+        authentik_host: "http://authentik-server.{{ authentik_namespace }}.svc.cluster.local"
+        authentik_host_insecure: true

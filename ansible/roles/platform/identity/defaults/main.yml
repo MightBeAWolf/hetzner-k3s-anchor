@@ -1,0 +1,18 @@
+# ansible/roles/platform/identity/defaults/main.yml
+---
+authentik_version: "2025.12.1"
+authentik_namespace: "identity"
+
+# Helm Release
+authentik_chart_repo: "https://charts.goauthentik.io"
+authentik_chart_version: "2025.12.1"
+
+# Database Configuration (Shared Cluster)
+authentik_db_host: "main-db-rw.database.svc"
+authentik_db_name: "authentik"
+authentik_db_user: "authentik"
+authentik_db_port: 5432
+
+# Secrets (Sourced from Mise environment)
+authentik_db_password: "{{ lookup('env', 'AUTHENTIK_DB_PASSWORD') }}"
+authentik_secret_key: "{{ lookup('env', 'AUTHENTIK_SECRET_KEY') }}"

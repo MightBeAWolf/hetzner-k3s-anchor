@@ -11,6 +11,11 @@
       kubeconfig: /etc/rancher/k3s/k3s.yaml
     kubernetes.core.helm_repository:
       kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_info:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_exec:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
 
   roles:
     - role: platform/database
+    - role: platform/identity

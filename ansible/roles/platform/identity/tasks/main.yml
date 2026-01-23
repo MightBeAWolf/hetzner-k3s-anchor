@@ -1,0 +1,113 @@
+---
+- name: Ensure Identity namespace exists
+  kubernetes.core.k8s:
+    name: "{{ authentik_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+# --- DYNAMIC LEADER RESOLUTION ---
+- name: Get Postgres Read-Write Endpoints
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Endpoints
+    name: "main-db-rw"
+    namespace: "database"
+  register: db_rw_endpoints
+
+- name: Fail if Read-Write Endpoint is empty
+  ansible.builtin.fail:
+    msg: "The main-db-rw service has no active endpoints."
+  when: >
+    db_rw_endpoints.resources | length == 0 or
+    db_rw_endpoints.resources[0].subsets is not defined or
+    db_rw_endpoints.resources[0].subsets | length == 0
+
+- name: Set Fact for Postgres Leader Pod
+  ansible.builtin.set_fact:
+    authentik_db_admin_pod: "{{ db_rw_endpoints.resources[0].subsets[0].addresses[0].targetRef.name }}"
+
+# --- DATABASE PROVISIONING (Refactored for Idempotency) ---
+
+- name: Check if Authentik User Exists
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ authentik_db_admin_pod }}"
+    command: psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ authentik_db_user }}'"
+  register: user_check
+  changed_when: false
+
+- name: Create Authentik User
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ authentik_db_admin_pod }}"
+    command: psql -U postgres -c "CREATE ROLE {{ authentik_db_user }} WITH LOGIN PASSWORD '{{ authentik_db_password | string }}';"
+  # FIX: Add '| trim' to ignore trailing newlines
+  when: (user_check.stdout | trim) != '1'
+
+- name: Check if Authentik Database Exists
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ authentik_db_admin_pod }}"
+    command: psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ authentik_db_name }}'"
+  register: db_check
+  changed_when: false
+
+- name: Create Authentik Database
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ authentik_db_admin_pod }}"
+    command: psql -U postgres -c "CREATE DATABASE {{ authentik_db_name }} OWNER {{ authentik_db_user }};"
+  # FIX: Add '| trim' here as well
+  when: (db_check.stdout | trim) != '1'
+
+# --- LDAP TLS CERTIFICATE ---
+- name: Deploy LDAP TLS Certificate
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ldap-certificate.yaml.j2') | from_yaml }}"
+
+- name: Wait for LDAP Certificate to be ready
+  kubernetes.core.k8s_info:
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: authentik-ldap-tls
+    namespace: "{{ authentik_namespace }}"
+  register: ldap_cert
+  until: >
+    ldap_cert.resources | length > 0 and
+    ldap_cert.resources[0].status is defined and
+    ldap_cert.resources[0].status.conditions is defined and
+    (ldap_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0)
+  retries: 30
+  delay: 10
+
+- name: Deploy LDAP Outpost Blueprint
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "authentik-blueprints"
+        namespace: "{{ authentik_namespace }}"
+        labels:
+          app.kubernetes.io/name: authentik
+      data:
+        ldap-outpost.yaml: "{{ lookup('template', 'blueprint-ldap.yaml.j2') }}"
+
+# --- HELM DEPLOYMENT ---
+- name: Add Authentik Helm Repo
+  kubernetes.core.helm_repository:
+    name: authentik
+    repo_url: "{{ authentik_chart_repo }}"
+
+- name: Deploy Authentik
+  kubernetes.core.helm:
+    name: authentik
+    chart_ref: authentik/authentik
+    release_namespace: "{{ authentik_namespace }}"
+    chart_version: "{{ authentik_chart_version }}"
+    values: "{{ lookup('template', 'values.yaml.j2') | from_yaml }}"
+    wait: true
+    wait_timeout: "15m"

@@ -1,0 +1,5 @@
+# ansible/roles/platform/identity/meta/main.yml
+---
+dependencies:
+  - role: system/helm
+  - role: platform/database
