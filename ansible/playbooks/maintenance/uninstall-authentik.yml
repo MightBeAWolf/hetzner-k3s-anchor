@@ -1,0 +1,73 @@
+---
+# Uninstall Authentik and clean up its database
+# Run with: mise run ansible:run playbooks/maintenance/uninstall-authentik.yml
+
+- name: Uninstall Authentik
+  hosts: k3s_nodes[0]
+  become: true
+  gather_facts: false
+
+  module_defaults:
+    kubernetes.core.helm:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_info:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_exec:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+  vars:
+    authentik_namespace: "identity"
+    authentik_db_name: "authentik"
+    authentik_db_user: "authentik"
+
+  tasks:
+    - name: Uninstall Authentik Helm release
+      kubernetes.core.helm:
+        name: authentik
+        release_namespace: "{{ authentik_namespace }}"
+        state: absent
+        wait: true
+
+    - name: Delete identity namespace
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ authentik_namespace }}"
+        state: absent
+        wait: true
+        wait_timeout: 120
+
+    - name: Get database admin pod
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: database
+        label_selectors:
+          - cnpg.io/cluster=main-db
+          - role=primary
+      register: db_pods
+
+    - name: Set database admin pod name
+      ansible.builtin.set_fact:
+        db_admin_pod: "{{ db_pods.resources[0].metadata.name }}"
+      when: db_pods.resources | length > 0
+
+    - name: Drop Authentik database
+      kubernetes.core.k8s_exec:
+        namespace: database
+        pod: "{{ db_admin_pod }}"
+        command: psql -U postgres -c "DROP DATABASE IF EXISTS {{ authentik_db_name }};"
+      when: db_admin_pod is defined
+
+    - name: Drop Authentik database role
+      kubernetes.core.k8s_exec:
+        namespace: database
+        pod: "{{ db_admin_pod }}"
+        command: psql -U postgres -c "DROP ROLE IF EXISTS {{ authentik_db_user }};"
+      when: db_admin_pod is defined
+
+    - name: Display uninstall status
+      ansible.builtin.debug:
+        msg: "Authentik has been uninstalled and its database removed"

@@ -22,15 +22,14 @@ ANSIBLE_FORCE_COLOR = "1"
 # Authentik Secrets
 AUTHENTIK_SECRET_KEY = "op://Private/Anchor Authentik Secrets/secret_key"
 AUTHENTIK_DB_PASSWORD = "op://Private/Anchor Authentik Secrets/db_password"
+AUTHENTIK_BOOTSTRAP_EMAIL = "op://Private/s4edwscvjopbjvcr44ri6iws74/username"
+AUTHENTIK_BOOTSTRAP_PASSWORD = "op://Private/s4edwscvjopbjvcr44ri6iws74/password"
 
 # SMTP Configuration (Resend.com)
 AUTHENTIK_SMTP_HOST = "op://Private/Anchor SMTP Resend.com API Credentials/hostname"
 AUTHENTIK_SMTP_PORT = "op://Private/Anchor SMTP Resend.com API Credentials/port"
 AUTHENTIK_SMTP_USERNAME = "op://Private/Anchor SMTP Resend.com API Credentials/username"
 AUTHENTIK_SMTP_PASSWORD = "op://Private/Anchor SMTP Resend.com API Credentials/credential"
-
-# LDAP Configuration
-AUTHENTIK_LDAP_BASE_DN = "op://Private/Twobitrobit LDAP/base_dn"
 
 [tools]
 "opentofu" = "latest"
@@ -40,6 +39,8 @@ AUTHENTIK_LDAP_BASE_DN = "op://Private/Twobitrobit LDAP/base_dn"
 "pipx:ansible-core" = { version = "latest", uvx_args = "--with requests --with hcloud" }
 "kubectl" = "latest"
 "yamllint" = "latest"
+"hcloud" = "latest"  # Required for K3s resource cleanup on destroy
+"helm" = "latest"
 
 # Setup tasks
 [tasks.setup]

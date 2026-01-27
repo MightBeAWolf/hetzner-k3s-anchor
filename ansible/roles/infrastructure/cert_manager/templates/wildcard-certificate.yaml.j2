@@ -9,7 +9,7 @@ metadata:
 spec:
   secretName: wildcard-{{ domain | replace('.', '-') }}-tls
   issuerRef:
-    name: letsencrypt-production
+    name: letsencrypt-{{ cert_manager_issuer }}
     kind: ClusterIssuer
   commonName: "{{ domain }}"
   dnsNames:

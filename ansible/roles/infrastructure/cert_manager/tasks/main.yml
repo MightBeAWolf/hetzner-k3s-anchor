@@ -81,7 +81,7 @@
   ansible.builtin.command:
     cmd: >-
       k3s kubectl wait --for=condition=Ready
-      clusterissuer/letsencrypt-production --timeout=120s
+      clusterissuer/letsencrypt-{{ cert_manager_issuer }} --timeout=120s
   changed_when: false
   retries: 5
   delay: 10

@@ -25,14 +25,25 @@ postgresql:
 redis:
   enabled: false
 
-blueprints:
-  configMaps:
-    - authentik-blueprints
-
 # ---------------------------------------------------------------------
 # Server Component
 # ---------------------------------------------------------------------
 server:
+  env:
+    - name: AUTHENTIK_BOOTSTRAP_EMAIL
+      value: "{{ lookup('env', 'AUTHENTIK_BOOTSTRAP_EMAIL') }}"
+    - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+      value: "{{ lookup('env', 'AUTHENTIK_BOOTSTRAP_PASSWORD') }}"
+
+  volumes:
+    - name: blueprints
+      configMap:
+        name: authentik-blueprints
+
+  volumeMounts:
+    - name: blueprints
+      mountPath: /blueprints/custom
+
   ingress:
     enabled: true
     ingressClassName: "traefik"
@@ -42,15 +53,6 @@ server:
       - "auth.{{ lookup('env', 'TF_VAR_domain') }}"
     paths:
       - "/"
-
-  # Mount blueprint ConfigMap
-  volumes:
-    - name: blueprints-cm
-      configMap:
-        name: authentik-blueprints
-  volumeMounts:
-    - name: blueprints-cm
-      mountPath: /blueprints/mounted/cm-authentik-blueprints
 
   # POD Level Context
   securityContext:
@@ -72,6 +74,21 @@ server:
 # Worker Component
 # ---------------------------------------------------------------------
 worker:
+  env:
+    - name: AUTHENTIK_BOOTSTRAP_EMAIL
+      value: "{{ lookup('env', 'AUTHENTIK_BOOTSTRAP_EMAIL') }}"
+    - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+      value: "{{ lookup('env', 'AUTHENTIK_BOOTSTRAP_PASSWORD') }}"
+
+  volumes:
+    - name: blueprints
+      configMap:
+        name: authentik-blueprints
+
+  volumeMounts:
+    - name: blueprints
+      mountPath: /blueprints/custom
+
   # POD Level Context
   securityContext: 
     runAsUser: 1000

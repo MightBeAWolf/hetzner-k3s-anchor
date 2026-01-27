@@ -6,6 +6,22 @@
     kind: Namespace
     state: present
 
+# --- WAIT FOR DATABASE CLUSTER ---
+- name: Wait for CloudNativePG cluster to be healthy
+  kubernetes.core.k8s_info:
+    api_version: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: main-db
+    namespace: database
+  register: cnpg_cluster
+  until: >
+    cnpg_cluster.resources | length > 0 and
+    cnpg_cluster.resources[0].status is defined and
+    cnpg_cluster.resources[0].status.phase is defined and
+    cnpg_cluster.resources[0].status.phase == "Cluster in healthy state"
+  retries: 30
+  delay: 10
+
 # --- DYNAMIC LEADER RESOLUTION ---
 - name: Get Postgres Read-Write Endpoints
   kubernetes.core.k8s_info:
@@ -42,7 +58,6 @@
     namespace: "database"
     pod: "{{ authentik_db_admin_pod }}"
     command: psql -U postgres -c "CREATE ROLE {{ authentik_db_user }} WITH LOGIN PASSWORD '{{ authentik_db_password | string }}';"
-  # FIX: Add '| trim' to ignore trailing newlines
   when: (user_check.stdout | trim) != '1'
 
 - name: Check if Authentik Database Exists
@@ -58,43 +73,23 @@
     namespace: "database"
     pod: "{{ authentik_db_admin_pod }}"
     command: psql -U postgres -c "CREATE DATABASE {{ authentik_db_name }} OWNER {{ authentik_db_user }};"
-  # FIX: Add '| trim' here as well
   when: (db_check.stdout | trim) != '1'
 
-# --- LDAP TLS CERTIFICATE ---
-- name: Deploy LDAP TLS Certificate
-  kubernetes.core.k8s:
-    state: present
-    definition: "{{ lookup('template', 'ldap-certificate.yaml.j2') | from_yaml }}"
-
-- name: Wait for LDAP Certificate to be ready
-  kubernetes.core.k8s_info:
-    api_version: cert-manager.io/v1
-    kind: Certificate
-    name: authentik-ldap-tls
-    namespace: "{{ authentik_namespace }}"
-  register: ldap_cert
-  until: >
-    ldap_cert.resources | length > 0 and
-    ldap_cert.resources[0].status is defined and
-    ldap_cert.resources[0].status.conditions is defined and
-    (ldap_cert.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0)
-  retries: 30
-  delay: 10
-
-- name: Deploy LDAP Outpost Blueprint
+# --- BLUEPRINTS ---
+- name: Deploy Enrollment Invitation Blueprint ConfigMap
   kubernetes.core.k8s:
     state: present
     definition:
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: "authentik-blueprints"
+        name: authentik-blueprints
         namespace: "{{ authentik_namespace }}"
         labels:
           app.kubernetes.io/name: authentik
       data:
-        ldap-outpost.yaml: "{{ lookup('template', 'blueprint-ldap.yaml.j2') }}"
+        enrollment-invitation.yaml: "{{ lookup('template', 'blueprint-enrollment-invitation.yaml.j2') }}"
+        recovery-email.yaml: "{{ lookup('template', 'blueprint-recovery-email.yaml.j2') }}"
 
 # --- HELM DEPLOYMENT ---
 - name: Add Authentik Helm Repo
@@ -111,3 +106,17 @@
     values: "{{ lookup('template', 'values.yaml.j2') | from_yaml }}"
     wait: true
     wait_timeout: "15m"
+
+- name: Wait for Authentik server deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: authentik-server
+    namespace: "{{ authentik_namespace }}"
+  register: authentik_deploy
+  until: >
+    authentik_deploy.resources | length > 0 and
+    authentik_deploy.resources[0].status.readyReplicas is defined and
+    authentik_deploy.resources[0].status.readyReplicas == authentik_deploy.resources[0].spec.replicas
+  retries: 30
+  delay: 10

@@ -1,8 +1,4 @@
-- [ ] Create cert-manager Certificate for LDAP TLS                                                                                             
-- [ ] Add certificate reference to LDAP provider blueprint 
-- [ ] Authentik blueprint for LDAP Outpost
-- [x] Setup Authentik/Resend
-- [ ] Test Authentik LDAP
+- [ ] Authentik enforce 2fa blueprint
 - [ ] Have tofu:destroy also destroy resources spawned by k3s calls to Hetzner CSI
 - [ ] Gatus health checks
 - [ ] Forgejo
