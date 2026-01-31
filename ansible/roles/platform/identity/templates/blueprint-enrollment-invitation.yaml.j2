@@ -1,19 +1,16 @@
-# Based on the official "Example - Invitation-based Enrollment" blueprint
-# https://github.com/goauthentik/authentik/blob/main/blueprints/example/flows-invitation-enrollment.yaml
-#
 # Simplified to a single invitation-gated enrollment flow.
 # Example invitations removed — create invitations via the Admin UI.
 version: 1
 metadata:
   labels:
     blueprints.goauthentik.io/instantiate: "true"
-  name: Invitation-based Enrollment
+  name: Link Invitation-based Enrollment
 entries:
   # --- Flow ---
   - identifiers:
-      slug: invitation-enrollment
+      slug: link-invitation-enrollment
     model: authentik_flows.flow
-    id: enrollment-flow
+    id: invitation-enrollment-flow
     attrs:
       name: Invitation Enrollment Flow
       title: Welcome! Complete your enrollment
@@ -30,51 +27,12 @@ entries:
 
   # --- Prompt Fields ---
   - identifiers:
-      name: invitation-enrollment-field-username
-    id: prompt-field-username
-    model: authentik_stages_prompt.prompt
-    attrs:
-      field_key: username
-      label: Username
-      type: username
-      required: true
-      placeholder: Username
-      placeholder_expression: false
-      order: 0
-
-  - identifiers:
-      name: invitation-enrollment-field-password
-    id: prompt-field-password
-    model: authentik_stages_prompt.prompt
-    attrs:
-      field_key: password
-      label: Password
-      type: password
-      required: true
-      placeholder: Password
-      placeholder_expression: false
-      order: 1
-
-  - identifiers:
-      name: invitation-enrollment-field-password-repeat
-    id: prompt-field-password-repeat
-    model: authentik_stages_prompt.prompt
-    attrs:
-      field_key: password_repeat
-      label: Password (repeat)
-      type: password
-      required: true
-      placeholder: Password (repeat)
-      placeholder_expression: false
-      order: 2
-
-  - identifiers:
       name: invitation-enrollment-field-name
     id: prompt-field-name
     model: authentik_stages_prompt.prompt
     attrs:
       field_key: name
-      label: Name
+      label: Full Name
       type: text
       required: true
       placeholder: Name
@@ -94,6 +52,45 @@ entries:
       placeholder_expression: false
       order: 1
 
+  - identifiers:
+      name: invitation-enrollment-field-username
+    id: prompt-field-username
+    model: authentik_stages_prompt.prompt
+    attrs:
+      field_key: username
+      label: Username
+      type: username
+      required: true
+      placeholder: Username
+      placeholder_expression: false
+      order: 2
+
+  - identifiers:
+      name: invitation-enrollment-field-password
+    id: prompt-field-password
+    model: authentik_stages_prompt.prompt
+    attrs:
+      field_key: password
+      label: Password
+      type: password
+      required: true
+      placeholder: Password
+      placeholder_expression: false
+      order: 3
+
+  - identifiers:
+      name: invitation-enrollment-field-password-repeat
+    id: prompt-field-password-repeat
+    model: authentik_stages_prompt.prompt
+    attrs:
+      field_key: password_repeat
+      label: Password (repeat)
+      type: password
+      required: true
+      placeholder: Password (repeat)
+      placeholder_expression: false
+      order: 4
+
   # --- Prompt Stages ---
   - identifiers:
       name: invitation-enrollment-prompt-credentials
@@ -101,18 +98,13 @@ entries:
     model: authentik_stages_prompt.promptstage
     attrs:
       fields:
+        - !KeyOf prompt-field-email
         - !KeyOf prompt-field-username
+        - !KeyOf prompt-field-name
         - !KeyOf prompt-field-password
         - !KeyOf prompt-field-password-repeat
-
-  - identifiers:
-      name: invitation-enrollment-prompt-details
-    id: prompt-stage-details
-    model: authentik_stages_prompt.promptstage
-    attrs:
-      fields:
-        - !KeyOf prompt-field-name
-        - !KeyOf prompt-field-email
+      validation_policies: 
+        - !Find [authentik_policies_password.passwordpolicy, [name, default-password-policy]]
 
   # --- User Write Stage ---
   - identifiers:
@@ -124,15 +116,9 @@ entries:
       user_type: internal
       user_path_template: users
 
-  # --- User Login Stage ---
-  - identifiers:
-      name: invitation-enrollment-user-login
-    id: user-login-stage
-    model: authentik_stages_user_login.userloginstage
-
   # --- Flow Stage Bindings ---
   - identifiers:
-      target: !KeyOf enrollment-flow
+      target: !KeyOf invitation-enrollment-flow
       stage: !KeyOf invitation-stage
       order: 5
     model: authentik_flows.flowstagebinding
@@ -141,25 +127,19 @@ entries:
       re_evaluate_policies: true
 
   - identifiers:
-      target: !KeyOf enrollment-flow
+      target: !KeyOf invitation-enrollment-flow
       stage: !KeyOf prompt-stage-credentials
       order: 10
     model: authentik_flows.flowstagebinding
 
   - identifiers:
-      target: !KeyOf enrollment-flow
-      stage: !KeyOf prompt-stage-details
-      order: 15
-    model: authentik_flows.flowstagebinding
-
-  - identifiers:
-      target: !KeyOf enrollment-flow
+      target: !KeyOf invitation-enrollment-flow
       stage: !KeyOf user-write-stage
       order: 20
     model: authentik_flows.flowstagebinding
 
   - identifiers:
-      target: !KeyOf enrollment-flow
-      stage: !KeyOf user-login-stage
+      target: !KeyOf invitation-enrollment-flow
+      stage: !Find [authentik_stages_user_login.userloginstage, [name, default-source-enrollment-login]]
       order: 100
     model: authentik_flows.flowstagebinding

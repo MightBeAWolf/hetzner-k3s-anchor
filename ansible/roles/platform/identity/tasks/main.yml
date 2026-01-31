@@ -90,6 +90,10 @@
       data:
         enrollment-invitation.yaml: "{{ lookup('template', 'blueprint-enrollment-invitation.yaml.j2') }}"
         recovery-email.yaml: "{{ lookup('template', 'blueprint-recovery-email.yaml.j2') }}"
+        password-policy.yaml: "{{ lookup('template', 'blueprint-password-policy.yaml.j2') }}"
+        enforce-mfa-authenticator.yaml: "{{ lookup('template', 'blueprint-enforce-mfa-authenticator.yaml.j2') }}"
+        default-login-customization.yaml: "{{ lookup('template', 'blueprint-default-login-customization.yaml.j2') }}"
+        traefik-dashboard.yaml: "{{ lookup('template', 'blueprint-traefik-dashboard.yaml.j2') }}"
 
 # --- HELM DEPLOYMENT ---
 - name: Add Authentik Helm Repo
@@ -106,6 +110,57 @@
     values: "{{ lookup('template', 'values.yaml.j2') | from_yaml }}"
     wait: true
     wait_timeout: "15m"
+
+# --- TRAEFIK FORWARD-AUTH MIDDLEWARE ---
+- name: Deploy Authentik forward-auth Middleware for Traefik
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      metadata:
+        name: authentik-forward-auth
+        namespace: "{{ authentik_namespace }}"
+      spec:
+        forwardAuth:
+          address: "http://authentik-server.{{ authentik_namespace }}.svc.cluster.local/outpost.goauthentik.io/auth/traefik"
+          trustForwardHeader: true
+          authResponseHeaders:
+            - X-authentik-username
+            - X-authentik-groups
+            - X-authentik-entitlements
+            - X-authentik-email
+            - X-authentik-name
+            - X-authentik-uid
+            - X-authentik-jwt
+            - X-authentik-meta-jwks
+            - X-authentik-meta-outpost
+            - X-authentik-meta-provider
+            - X-authentik-meta-app
+            - X-authentik-meta-version
+
+- name: Deploy Authentik outpost callback IngressRoute
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: IngressRoute
+      metadata:
+        name: authentik-outpost-callback
+        namespace: "{{ authentik_namespace }}"
+      spec:
+        entryPoints:
+          - websecure
+        routes:
+          - kind: Rule
+            match: "Host(`{{ lookup('env', 'TF_VAR_domain') }}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+            services:
+              - kind: Service
+                name: authentik-server
+                namespace: "{{ authentik_namespace }}"
+                port: 80
+        tls:
+          secretName: "wildcard-{{ lookup('env', 'TF_VAR_domain') | replace('.', '-') }}-tls"
 
 - name: Wait for Authentik server deployment to be ready
   kubernetes.core.k8s_info:

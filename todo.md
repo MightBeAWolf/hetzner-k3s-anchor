@@ -1,8 +1,18 @@
-- [ ] Authentik enforce 2fa blueprint
 - [ ] Have tofu:destroy also destroy resources spawned by k3s calls to Hetzner CSI
 - [ ] Gatus health checks
 - [ ] Forgejo
 - [ ] Forgejo Actions
 - [ ] CopyParty
 - [ ] Step-CA
-- [ ] Ntfy
+- [ ] Ntfy (ntfy.twobitrobit.com)
+    - [ ] Create Ansible role `platform/ntfy`
+    - [ ] Create namespace, ConfigMap (server.yml), and StatefulSet with persistent cache
+    - [ ] Create Service and Ingress for ntfy.twobitrobit.com
+    - [ ] Create Authentik blueprint (proxy provider + application for ntfy)
+    - [ ] Add forward-auth middleware to ntfy Ingress
+    - [ ] Add outpost callback IngressRoute for ntfy domain
+    - [ ] Add ntfy role to platform playbook and deploy task
+    - [ ] Test publish/subscribe from CLI and browser
+
+- [ ] Switch certs to prod.
+    - [ ] Remove AUTHENTIK_INSECURE

@@ -1,0 +1,42 @@
+# Authentik Application and Proxy Provider for the Traefik dashboard.
+# Uses forward-auth mode since Traefik serves the dashboard via IngressRoute.
+version: 1
+metadata:
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+  name: Traefik Dashboard
+entries:
+  # --- Proxy Provider (forward-auth mode) ---
+  - model: authentik_providers_proxy.proxyprovider
+    state: present
+    id: provider-traefik-dashboard
+    identifiers:
+      name: Traefik Dashboard
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      mode: forward_single
+      external_host: "https://{{ lookup('env', 'TF_VAR_domain') }}"
+
+  # --- Application ---
+  - model: authentik_core.application
+    state: present
+    id: app-traefik-dashboard
+    identifiers:
+      slug: traefik-dashboard
+    attrs:
+      name: Traefik Dashboard
+      provider: !KeyOf provider-traefik-dashboard
+      meta_launch_url: "https://{{ lookup('env', 'TF_VAR_domain') }}/dashboard/"
+      policy_engine_mode: any
+
+  # --- Bind application to embedded outpost ---
+  - model: authentik_outposts.outpost
+    state: present
+    identifiers:
+      name: authentik Embedded Outpost
+    attrs:
+      type: proxy
+      managed: goauthentik.io/outposts/embedded
+      providers:
+        - !KeyOf provider-traefik-dashboard

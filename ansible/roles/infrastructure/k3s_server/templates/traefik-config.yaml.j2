@@ -6,10 +6,10 @@ metadata:
 spec:
   valuesContent: |-
     hostNetwork: true
-    dnsPolicy: ClusterFirstWithHostNet
 
     deployment:
       kind: DaemonSet
+      dnsPolicy: ClusterFirstWithHostNet
 
     service:
       type: ClusterIP
@@ -52,7 +52,12 @@ spec:
             - 192.168.0.0/16
             - 10.42.0.0/16
 
-    # Enable Traefik dashboard (secured by Hetzner firewall)
+    # Allow cross-namespace middleware references (e.g. identity namespace)
+    providers:
+      kubernetesCRD:
+        allowCrossNamespace: true
+
+    # Enable Traefik dashboard (secured by Authentik forward-auth)
     api:
       dashboard: true
       insecure: true
@@ -63,6 +68,9 @@ spec:
         matchRule: Host(`{{ domain }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
         entryPoints:
           - websecure
+        middlewares:
+          - name: authentik-forward-auth
+            namespace: identity
         tls:
           secretName: wildcard-{{ domain | replace('.', '-') }}-tls
 
