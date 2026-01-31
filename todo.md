@@ -5,14 +5,21 @@
 - [ ] CopyParty
 - [ ] Step-CA
 - [ ] Ntfy (ntfy.twobitrobit.com)
-    - [ ] Create Ansible role `platform/ntfy`
-    - [ ] Create namespace, ConfigMap (server.yml), and StatefulSet with persistent cache
-    - [ ] Create Service and Ingress for ntfy.twobitrobit.com
-    - [ ] Create Authentik blueprint (proxy provider + application for ntfy)
-    - [ ] Add forward-auth middleware to ntfy Ingress
-    - [ ] Add outpost callback IngressRoute for ntfy domain
-    - [ ] Add ntfy role to platform playbook and deploy task
+    - [x] Create Ansible role `platform/ntfy`
+    - [x] Create namespace, ConfigMap (server.yml), and StatefulSet with persistent cache
+    - [x] Create Service and IngressRoute for ntfy.twobitrobit.com
+    - [x] Create Authentik blueprint (consolidated into blueprint-forward-auth-apps.yaml.j2 with Traefik Dashboard)
+    - [x] Add forward-auth middleware to ntfy IngressRoute
+    - [x] Add outpost callback IngressRoute for ntfy domain
+    - [x] Add ntfy role to platform playbook
+    - [ ] Deploy with `mise run ansible:deploy-platform`
     - [ ] Test publish/subscribe from CLI and browser
+    - [ ] M2M (Machine-to-Machine) auth for Ntfy via Authentik OAuth2
+        - [ ] Create Authentik service account (`ntfy-m2m-publisher`)
+        - [ ] Create OAuth2/OpenID Provider (confidential client, implicit-consent flow)
+        - [ ] Create "Ntfy API" Application bound to the OAuth2 provider
+        - [ ] Add expression policy to Ntfy proxy provider to allow service accounts via Bearer token
+        - [ ] Test token flow: `POST /application/o/token/` (client_credentials grant) → Bearer token → publish to ntfy
 
 - [ ] Switch certs to prod.
     - [ ] Remove AUTHENTIK_INSECURE

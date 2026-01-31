@@ -93,7 +93,7 @@
         password-policy.yaml: "{{ lookup('template', 'blueprint-password-policy.yaml.j2') }}"
         enforce-mfa-authenticator.yaml: "{{ lookup('template', 'blueprint-enforce-mfa-authenticator.yaml.j2') }}"
         default-login-customization.yaml: "{{ lookup('template', 'blueprint-default-login-customization.yaml.j2') }}"
-        traefik-dashboard.yaml: "{{ lookup('template', 'blueprint-traefik-dashboard.yaml.j2') }}"
+        forward-auth-apps.yaml: "{{ lookup('template', 'blueprint-forward-auth-apps.yaml.j2') }}"
 
 # --- HELM DEPLOYMENT ---
 - name: Add Authentik Helm Repo
@@ -154,6 +154,29 @@
         routes:
           - kind: Rule
             match: "Host(`{{ lookup('env', 'TF_VAR_domain') }}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+            services:
+              - kind: Service
+                name: authentik-server
+                namespace: "{{ authentik_namespace }}"
+                port: 80
+        tls:
+          secretName: "wildcard-{{ lookup('env', 'TF_VAR_domain') | replace('.', '-') }}-tls"
+
+- name: Deploy Authentik outpost callback IngressRoute for ntfy
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: IngressRoute
+      metadata:
+        name: authentik-outpost-callback-ntfy
+        namespace: "{{ authentik_namespace }}"
+      spec:
+        entryPoints:
+          - websecure
+        routes:
+          - kind: Rule
+            match: "Host(`ntfy.{{ lookup('env', 'TF_VAR_domain') }}`) && PathPrefix(`/outpost.goauthentik.io/`)"
             services:
               - kind: Service
                 name: authentik-server

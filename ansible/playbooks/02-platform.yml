@@ -19,3 +19,4 @@
   roles:
     - role: platform/database
     - role: platform/identity
+    - role: platform/ntfy

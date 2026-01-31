@@ -1,0 +1,4 @@
+---
+ntfy_namespace: "ntfy"
+ntfy_domain: "ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
+ntfy_image: "binwiederhier/ntfy:v2.11.0"
