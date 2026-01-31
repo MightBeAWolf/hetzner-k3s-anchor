@@ -6,8 +6,10 @@
 #
 # These resources are not managed by Tofu, so we need to clean them up on destroy.
 
-# This resource runs BEFORE the servers are destroyed (due to depends_on in server resource)
+# On destroy, Tofu reverses dependency order: cleanup runs BEFORE servers are deleted.
 resource "null_resource" "k3s_resource_cleanup" {
+  depends_on = [hcloud_server.k3s_nodes]
+
   # Store token in triggers so it's available during destroy
   triggers = {
     always       = "k3s-cleanup"
@@ -69,4 +71,3 @@ resource "null_resource" "k3s_resource_cleanup" {
     # HCLOUD_TOKEN is set by `op run` wrapper in mise tasks
   }
 }
-# Servers depend on this resource (in main.tf) so cleanup runs first on destroy

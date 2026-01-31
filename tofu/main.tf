@@ -207,8 +207,7 @@ resource "hcloud_server" "k3s_nodes" {
     ip         = "192.168.1.${count.index + 2}"
   }
 
-  # Cleanup runs before servers are destroyed (destroy is reverse dependency order)
-  depends_on = [hcloud_network_subnet.k3s_subnet, null_resource.k3s_resource_cleanup]
+  depends_on = [hcloud_network_subnet.k3s_subnet]
 }
 
 

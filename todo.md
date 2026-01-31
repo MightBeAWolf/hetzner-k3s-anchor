@@ -1,4 +1,4 @@
-- [ ] Have tofu:destroy also destroy resources spawned by k3s calls to Hetzner CSI
+- [?] Have tofu:destroy also destroy resources spawned by k3s calls to Hetzner CSI
 - [ ] Gatus health checks
 - [ ] Forgejo
 - [ ] Forgejo Actions
