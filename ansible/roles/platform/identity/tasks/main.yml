@@ -76,7 +76,7 @@
   when: (db_check.stdout | trim) != '1'
 
 # --- BLUEPRINTS ---
-- name: Deploy Enrollment Invitation Blueprint ConfigMap
+- name: Deploy Authentik Blueprints
   kubernetes.core.k8s:
     state: present
     definition:

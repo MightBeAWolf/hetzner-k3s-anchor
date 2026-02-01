@@ -39,31 +39,17 @@ resource "null_resource" "k3s_resource_cleanup" {
 
       # Delete Volumes created by CSI (have csi.hetzner.cloud in name or specific labels)
       echo "Looking for K3s CSI-managed Volumes..."
-      VOL_IDS=$(hcloud volume list -l project=anchor -o noheader -o columns=id 2>/dev/null || true)
+      VOL_IDS=$(hcloud volume list --selector 'provisioner=k3s' -o noheader -o 'columns=id' 2>/dev/null || true)
       if [ -n "$VOL_IDS" ]; then
         for vol_id in $VOL_IDS; do
           echo "Deleting Volume: $vol_id"
           # Detach first if attached
-          hcloud volume detach "$vol_id" 2>/dev/null || true
+          hcloud volume detach "$vol_id"
           sleep 2
-          hcloud volume delete "$vol_id" --yes 2>/dev/null || true
+          hcloud volume delete "$vol_id" --yes
         done
       else
         echo "No K3s-managed Volumes found"
-      fi
-
-      # Also check for volumes by name pattern (csi-vol-*)
-      echo "Looking for CSI Volumes by name pattern..."
-      CSI_VOL_IDS=$(hcloud volume list -o noheader -o columns=id,name 2>/dev/null | grep -E 'csi-vol-|pvc-' | awk '{print $1}' || true)
-      if [ -n "$CSI_VOL_IDS" ]; then
-        for vol_id in $CSI_VOL_IDS; do
-          echo "Deleting CSI Volume: $vol_id"
-          hcloud volume detach "$vol_id" 2>/dev/null || true
-          sleep 2
-          hcloud volume delete "$vol_id" --yes 2>/dev/null || true
-        done
-      else
-        echo "No CSI Volumes found by name pattern"
       fi
 
       echo "==> K3s resource cleanup complete"

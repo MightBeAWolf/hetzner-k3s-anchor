@@ -13,6 +13,11 @@
   hosts: k3s-converged-node-01
   become: true
   gather_facts: false
+  module_defaults:
+    kubernetes.core.k8s:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_info:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
   vars:
     hcloud_network_name: "{{ hostvars['localhost']['hcloud_network_name'] }}"
   roles:
@@ -22,5 +27,10 @@
   hosts: k3s-converged-node-01
   become: true
   gather_facts: false
+  module_defaults:
+    kubernetes.core.k8s:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kubernetes.core.k8s_info:
+      kubeconfig: /etc/rancher/k3s/k3s.yaml
   roles:
     - role: "{{ playbook_dir }}/../../roles/infrastructure/hcloud_csi"

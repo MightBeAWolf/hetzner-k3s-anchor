@@ -58,13 +58,22 @@ entries:
       invalid_response_action: retry
 
   # --- Move existing login stage to after MFA validation ---
+  # Ensure the old binding is gone
+  - model: authentik_flows.flowstagebinding
+    state: absent
+    identifiers:
+      target: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+      stage:  !Find [authentik_stages_user_login.userloginstage, [name, default-source-enrollment-login]]
+      order: 2
+
+  # Ensure the new binding exists at 3
   - model: authentik_flows.flowstagebinding
     state: present
     identifiers:
       target: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
       stage: !Find [authentik_stages_user_login.userloginstage, [name, default-source-enrollment-login]]
-    attrs:
       order: 3
+    attrs:
       re_evaluate_policies: true
       policy_engine_mode: any
       invalid_response_action: retry

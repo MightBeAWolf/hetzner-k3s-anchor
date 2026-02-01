@@ -1,6 +1,6 @@
-# Consolidated blueprint for all forward-auth proxy providers.
-# The embedded outpost providers list is REPLACED (not merged), so all
-# forward-auth applications must be defined in a single blueprint.
+# Forward-auth proxy providers for applications behind Traefik.
+# All forward-auth providers must be listed here so the embedded outpost
+# providers list (which is REPLACED, not merged) stays complete.
 version: 1
 metadata:
   labels:
@@ -58,7 +58,7 @@ entries:
       policy_engine_mode: any
 
   # ============================================================
-  # Embedded Outpost (all providers)
+  # Embedded Outpost (all forward-auth providers)
   # ============================================================
   - model: authentik_outposts.outpost
     state: present
@@ -70,3 +70,5 @@ entries:
       providers:
         - !KeyOf provider-traefik-dashboard
         - !KeyOf provider-ntfy
+      config:
+        authentik_host: "https://auth.{{ lookup('env', 'TF_VAR_domain') }}"
