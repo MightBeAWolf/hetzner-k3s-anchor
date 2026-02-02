@@ -31,6 +31,8 @@ AUTHENTIK_SMTP_PORT = "op://Private/Anchor SMTP Resend.com API Credentials/port"
 AUTHENTIK_SMTP_USERNAME = "op://Private/Anchor SMTP Resend.com API Credentials/username"
 AUTHENTIK_SMTP_PASSWORD = "op://Private/Anchor SMTP Resend.com API Credentials/credential"
 
+NTFY_M2M_SECRET="op://Private/g62p55ou2jprzjawtkdracvngm/password"
+
 [tools]
 "opentofu" = "latest"
 "pre-commit" = "3.8.0"

@@ -302,6 +302,32 @@ kubectl expose deployment test-nginx --type=LoadBalancer --port=80
 kubectl get svc test-nginx -w  # Wait for EXTERNAL-IP
 ```
 
+# Examples
+
+## Sending a notification using curl and M2M oath tokens:
+
+```
+ACCESS_TOKEN="$(op run -- sh -c '
+# 1. Acquire the initial JWT from ntfy-m2m
+SOURCE_JWT=$(curl -k -s -X POST https://auth.twobitrobit.com/application/o/token/ \
+    -d "grant_type=client_credentials" \
+    -d "client_id=ntfy-m2m" \
+    -d "client_secret=$NTFY_M2M_SECRET" | jq -r .access_token)
+
+# 2. Exchange it and parse the final ntfy access_token
+curl -k -s -X POST https://auth.twobitrobit.com/application/o/token/ \
+    -d "grant_type=client_credentials" \
+    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
+    -d "client_assertion=$SOURCE_JWT" \
+    -d "client_id=${NTFY_PROXY_PROVIDER_CLIENT_ID:?}" | jq -r .access_token
+')"
+
+curl -k \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -d "M2M Notification" \
+  https://ntfy.twobitrobit.com/alerts
+```
+
 ## Next Steps
 
 K3s cluster is now operational. Next phases:

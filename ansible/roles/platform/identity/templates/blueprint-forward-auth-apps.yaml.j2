@@ -33,7 +33,56 @@ entries:
       policy_engine_mode: any
 
   # ============================================================
-  # Ntfy
+  # Ntfy M2M (Machine-to-Machine)
+  # ============================================================
+  # Create the Service Account (User)
+  - model: authentik_core.user
+    state: present
+    id: user-ntfy-m2m
+    identifiers:
+      username: ntfy-m2m-publisher
+    attrs:
+      name: ntfy-m2m-publisher
+      path: service-accounts
+      type: service_account
+      is_active: true
+
+  - model: authentik_core.token
+    state: present
+    user: !Find [authentik_core.user, [username, ntfy-m2m-publisher]]
+    key: "{{ lookup('env', 'NTFY_M2M_SECRET') }}"
+    intent: api
+
+  # Create the OAuth2 Provider
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    id: provider-ntfy-m2m
+    identifiers:
+      name: Ntfy M2M Provider
+    attrs:
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      client_id: ntfy-m2m
+      client_secret: "{{ lookup('env', 'NTFY_M2M_SECRET') }}"
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      redirect_uris: 
+        - url: "https://ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
+          matching_mode: "strict"
+
+  # Create the Application for M2M
+  - model: authentik_core.application
+    state: present
+    id: app-ntfy-m2m
+    identifiers:
+      slug: ntfy-m2m
+    attrs:
+      name: Ntfy M2M
+      provider: !KeyOf provider-ntfy-m2m
+      policy_engine_mode: any
+
+  # ============================================================
+  # Ntfy Proxy
   # ============================================================
   - model: authentik_providers_proxy.proxyprovider
     state: present
@@ -45,6 +94,8 @@ entries:
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       mode: forward_single
       external_host: "https://ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
+      jwt_federation_providers:
+        - !KeyOf provider-ntfy-m2m
 
   - model: authentik_core.application
     state: present
@@ -56,7 +107,6 @@ entries:
       provider: !KeyOf provider-ntfy
       meta_launch_url: "https://ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
       policy_engine_mode: any
-
   # ============================================================
   # Embedded Outpost (all forward-auth providers)
   # ============================================================
@@ -68,7 +118,7 @@ entries:
       type: proxy
       managed: goauthentik.io/outposts/embedded
       providers:
-        - !KeyOf provider-traefik-dashboard
-        - !KeyOf provider-ntfy
+        - !Find [authentik_providers_proxy.proxyprovider, [name, "Traefik Dashboard"]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, "Ntfy"]]
       config:
         authentik_host: "https://auth.{{ lookup('env', 'TF_VAR_domain') }}"

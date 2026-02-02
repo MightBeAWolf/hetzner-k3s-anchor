@@ -127,6 +127,7 @@
           trustForwardHeader: true
           authResponseHeaders:
             - X-authentik-username
+            - Authorization
             - X-authentik-groups
             - X-authentik-entitlements
             - X-authentik-email
