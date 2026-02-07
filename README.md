@@ -307,26 +307,130 @@ kubectl get svc test-nginx -w  # Wait for EXTERNAL-IP
 ## Sending a notification using curl and M2M oath tokens:
 
 ```
-ACCESS_TOKEN="$(op run -- sh -c '
 # 1. Acquire the initial JWT from ntfy-m2m
-SOURCE_JWT=$(curl -k -s -X POST https://auth.twobitrobit.com/application/o/token/ \
-    -d "grant_type=client_credentials" \
-    -d "client_id=ntfy-m2m" \
-    -d "client_secret=$NTFY_M2M_SECRET" | jq -r .access_token)
+export OATH_JWT="$(op run -- sh -c "
+curl -k -s -X POST https://auth.twobitrobit.com/application/o/token/ \
+    -d \"grant_type=client_credentials\" \
+    -d \"client_id=ntfy-oauth2-provider\" \
+    -d \"client_secret=\$NTFY_M2M_SECRET\" \
+    -d \"scope=openid email profile\" \
+    | jq -r .access_token
+")"
+
+# 1.1 (optional) inspect the JWT
+echo "$OATH_JWT" | cut -d'.' -f2 | base64 -d | jq
 
 # 2. Exchange it and parse the final ntfy access_token
+export ACCESS_TOKEN="$(op run -- sh -c "
 curl -k -s -X POST https://auth.twobitrobit.com/application/o/token/ \
-    -d "grant_type=client_credentials" \
-    -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" \
-    -d "client_assertion=$SOURCE_JWT" \
-    -d "client_id=${NTFY_PROXY_PROVIDER_CLIENT_ID:?}" | jq -r .access_token
-')"
+    -d \"grant_type=client_credentials\" \
+    -d \"client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer\" \
+    -d \"client_assertion=\$OATH_JWT\" \
+    -d \"client_id=\${NTFY_PROXY_PROVIDER_CLIENT_ID:?}\" | jq -r .access_token
+")"
 
+#2.1 (optional) inspect the JWT
+echo "$ACCESS_TOKEN" | cut -d'.' -f2 | base64 -d | jq
+
+# 3 Make your query!
 curl -k \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -d "M2M Notification" \
   https://ntfy.twobitrobit.com/alerts
 ```
+
+## 🔒 Authentik JWT Federation for M2M Authentication
+
+### Expected Behavior
+
+According to [Authentik's documentation](https://docs.goauthentik.io/add-secure-apps/providers/proxy/header_authentication), proxy providers with `intercept_header_auth: true` and `jwt_federation_providers` configured should accept Bearer tokens from federated OAuth2 providers for machine-to-machine authentication.
+
+### Configuration
+
+**OAuth2 Provider (Token Issuer):**
+- Name: `Ntfy OAuth2 Provider`
+- Client ID: `ntfy-oauth2-provider`
+- Issues JWTs for M2M authentication via `client_credentials` grant
+
+**Proxy Provider (Forward Auth):**
+- Name: `Ntfy Proxy Provider`
+- Mode: `forward_single`
+- `intercept_header_auth: true` - Intercepts Authorization header
+- `jwt_federation_providers: [Ntfy OAuth2 Provider]` - Trusts JWTs from the OAuth2 provider
+
+**Expression Policy:**
+```python
+# Validates JWT claims
+if "oauth_jwt" not in request.context:
+    return False
+
+jwt = request.context["oauth_jwt"]
+return (
+    jwt.get("iss") == "https://auth.twobitrobit.com/application/o/ntfy-m2m/" and
+    jwt.get("aud") == "ntfy-oauth2-provider" and
+    "openid" in jwt.get("scope", "").split()
+)
+```
+
+### Expected Flow
+```bash
+# Step 1: Get JWT from OAuth2 Provider
+export JWT="$(curl -s -X POST https://auth.twobitrobit.com/application/o/token/ \
+    -d "grant_type=client_credentials" \
+    -d "client_id=ntfy-oauth2-provider" \
+    -d "client_secret=<SECRET>" \
+    -d "scope=openid email profile" | jq -r .access_token)"
+
+# Step 2: Use JWT directly to access protected resource
+curl -H "Authorization: Bearer $JWT" \
+    -d "M2M notification" \
+    https://ntfy.twobitrobit.com/alerts
+
+# Expected: 200 OK - notification posted
+# Actual: 302 redirect to login page
+```
+
+### What Should Happen
+
+1. **Traefik** forwards the request to Authentik's proxy outpost for authentication
+2. **Proxy outpost** extracts the Bearer token from the `Authorization` header
+3. **JWT validation**: Outpost recognizes the JWT signature as coming from a federated provider
+4. **Policy evaluation**: The expression policy checks the JWT claims (`iss`, `aud`, `scope`)
+5. **Success**: Policy passes, outpost forwards request to ntfy with user headers
+6. **Result**: ntfy processes the notification (200 OK)
+
+### What Actually Happens
+
+1. ✅ Traefik forwards to Authentik proxy outpost
+2. ✅ Proxy outpost extracts Bearer token
+3. ❌ **Outpost calls `/application/o/introspect/` endpoint** (OAuth2 introspection)
+4. ❌ **Introspection returns `{"active": false}`** (doesn't recognize federated JWTs)
+5. ❌ **Policy is never evaluated** (`oauth_jwt` context never populated)
+6. ❌ **302 redirect to interactive login page**
+
+### Evidence
+
+**Logs show no JWT validation:**
+```json
+{"event": "/application/o/introspect/", "status": 200}
+{"event": "token is not active", "level": "warning"}
+{"event": "/outpost.goauthentik.io/auth/traefik", "status": 302}
+```
+
+**Policy test passes manually** when `oauth_jwt` context is provided, confirming the policy logic is correct.
+
+### Issue
+
+The proxy provider's introspection endpoint does not validate federated JWTs. JWT federation appears to only work for interactive browser flows, not for direct Bearer token API authentication.
+
+**Version:** Authentik 2025.12.1
+**Deployment:** Kubernetes (embedded outpost)
+
+---
+
+📚 **References:**
+- [Machine-to-Machine OAuth2](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/machine_to_machine)
+- [Proxy Provider Header Authentication](https://docs.goauthentik.io/add-secure-apps/providers/proxy/header_authentication)
 
 ## Next Steps
 
