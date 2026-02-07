@@ -1,11 +1,11 @@
 # ansible/roles/platform/identity/defaults/main.yml
 ---
-authentik_version: "2025.12.1"
+authentik_version: "2025.12.3"
 authentik_namespace: "identity"
 
 # Helm Release
 authentik_chart_repo: "https://charts.goauthentik.io"
-authentik_chart_version: "2025.12.1"
+authentik_chart_version: "2025.12.3"
 
 # Database Configuration (Shared Cluster)
 authentik_db_host: "main-db-rw.database.svc"
