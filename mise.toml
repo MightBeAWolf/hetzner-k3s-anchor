@@ -1,4 +1,7 @@
+experimental_monorepo_root = true
+
 [env]
+MISE_EXPERIMENTAL=1
 HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
 TF_VAR_hcloud_token = "{{ env.HCLOUD_TOKEN }}"
 TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
@@ -11,6 +14,7 @@ KUBECONFIG = "{{ config_root }}/kubeconfig"
 TF_VAR_cloudflare_api_token = "op://Private/Anchor Cloudflare Config/credential"
 TF_VAR_cloudflare_zone_id = "op://Private/Anchor Cloudflare Config/zone_id"
 TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
+TF_VAR_server_type = "cx33"
 
 # cert-manager Configuration
 CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
@@ -42,7 +46,8 @@ NTFY_M2M_SECRET="op://Private/g62p55ou2jprzjawtkdracvngm/password"
 "kubectl" = "latest"
 "yamllint" = "latest"
 "hcloud" = "latest"  # Required for K3s resource cleanup on destroy
-"helm" = "latest"
+"helm" = "3.14.4"
+"helm-diff" = "latest"
 
 # Setup tasks
 [tasks.setup]

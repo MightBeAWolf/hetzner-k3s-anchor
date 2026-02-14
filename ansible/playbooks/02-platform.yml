@@ -18,5 +18,21 @@
 
   roles:
     - role: platform/database
+      tags: ['database']
     - role: platform/identity
+      tags: ['identity', 'auth', 'authentik']
     - role: platform/ntfy
+      tags: ['ntfy']
+
+  tasks:
+    - name: Deploy Matrix using Helm
+      kubernetes.core.helm:
+        release_name: matrix-chart
+        release_namespace: default
+        chart_ref: "{{ playbook_dir }}/../../charts/matrix"
+        wait: true
+        kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
+      become: false
+      tags: ['matrix']
+      delegate_to: localhost
+      run_once: true

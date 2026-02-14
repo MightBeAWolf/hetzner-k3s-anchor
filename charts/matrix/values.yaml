@@ -1,0 +1,10 @@
+namespace: matrix
+domain: matrix.twobitrobit.com
+wellKnown:
+  replicaCount: 1
+  image:
+    repository: docker.io/nginxinc/nginx-unprivileged
+    tag: latest
+  service:
+    type: ClusterIP
+    port: 80
