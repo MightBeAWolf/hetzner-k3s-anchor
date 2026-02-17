@@ -16,6 +16,9 @@ TF_VAR_cloudflare_zone_id = "op://Private/Anchor Cloudflare Config/zone_id"
 TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
 TF_VAR_server_type = "cx33"
 
+1PASSWORD_CONNECT_JWT="op://Anchor Kubernetes/Anchor 1Password Connect Server Credentials File/1password-credentials.json"
+1PASSWORD_OPERATOR_TOKEN="op://Anchor Kubernetes/Anchor 1Password Token Kubernetes Operator/credential"
+
 # cert-manager Configuration
 CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
 
