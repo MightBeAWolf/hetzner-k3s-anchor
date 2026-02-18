@@ -16,6 +16,32 @@
 - name: Deploy cert-manager
   ansible.builtin.import_playbook: infrastructure/cert-manager.yml
 
+
+- name: Install 1Password Connect and Operator
+  hosts: localhost
+  run_once: true
+  gather_facts: false
+  module_defaults:
+    kubernetes.core.helm:
+      kubeconfig: "{{ lookup('env', 'KUBECONFIG') }}"
+  tags: ['1password', 'secrets', 'credentials']
+  tasks:
+    - name: Deploy 1Password Connect Server
+      kubernetes.core.helm:
+        chart_ref: connect
+        release_namespace: 1password
+        release_name: onepassword-connect
+        create_namespace: true
+        chart_repo_url: https://1password.github.io/connect-helm-charts/
+        wait: true
+        values:
+          connect:
+            credentials_base64: "{{ lookup('env', '1PASSWORD_CONNECT_JWT') | b64encode }}"
+          operator:
+            create: true
+            token:
+              value: "{{ lookup('env', '1PASSWORD_OPERATOR_TOKEN') | string }}"
+
 - name: Post-deployment summary
   hosts: localhost
   gather_facts: false

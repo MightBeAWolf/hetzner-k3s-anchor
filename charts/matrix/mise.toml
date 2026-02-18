@@ -3,18 +3,18 @@
 depends = [":lint"]
 run = """
 trap '[[ $? -eq 0 ]] || mise run :uninstall' EXIT
-helm install --debug matrix-chart .
+helm install --debug matrix .
 """
 
 [tasks.update]
 depends = [":lint"]
 run = """
-helm upgrade --debug matrix-chart .
+helm upgrade --debug matrix .
 """
 
 [tasks.uninstall]
 depends = [":lint"]
-run = ["helm uninstall matrix-chart"]
+run = ["helm uninstall matrix"]
 
 [tasks.dryrun]
 depends = [":lint"]

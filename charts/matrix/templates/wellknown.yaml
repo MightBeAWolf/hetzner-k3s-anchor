@@ -2,19 +2,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-deployment
+  name: {{ .Release.Name }}-wellknown-deployment
   labels:
-    app: {{ .Chart.Name }}
+    app: {{ .Chart.Name }}-wellknown
   namespace: {{ .Values.namespace }}
 spec:
   replicas: {{ .Values.wellKnown.replicaCount }}
   selector:
     matchLabels:
-      app: {{ .Chart.Name }}
+      app: {{ .Chart.Name }}-wellknown
   template:
     metadata:
       labels:
-        app: {{ .Chart.Name }}
+        app: {{ .Chart.Name }}-wellknown
     spec:
       securityContext:
         runAsNonRoot: true
@@ -55,12 +55,12 @@ spec:
       volumes:
         - name: wellknown-config-volume
           configMap:
-            name: {{ .Release.Name }}-{{ .Chart.Name }}-wellknown-configmap
+            name: {{ .Release.Name }}-wellknown-configmap
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Release.Name }}-{{ .Chart.Name }}-wellknown-configmap
+  name: {{ .Release.Name }}-wellknown-configmap
   namespace: {{ .Values.namespace }}
 data:
   nginx-wellknown.conf: |
@@ -86,11 +86,11 @@ data:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-{{ .Chart.Name }}-wellknown-service
+  name: {{ .Release.Name }}-wellknown-service
   namespace: {{ .Values.namespace }}
 spec:
   selector:
-      app: {{ .Chart.Name }}
+      app: {{ .Chart.Name }}-wellknown
   ports:
     - port: 80
       targetPort: 8080
@@ -99,18 +99,17 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
-  name: {{ .Release.Name }}-{{ .Chart.Name }}-wellknown-ingressroute
+  name: {{ .Release.Name }}-wellknown-ingressroute
   namespace: "{{ .Values.namespace }}"
 spec:
   entryPoints:
     - websecure
   routes:
     - kind: Rule
-      match: "Host(`{{ .Values.domain }}`) && PathPrefix(`/.well-known/matrix/client`)"
+      match: "Host(`matrix.{{ .Values.domain }}`) && PathPrefix(`/.well-known/matrix/client`)"
       services:
         - kind: Service
-          name: {{ .Release.Name }}-{{ .Chart.Name }}-wellknown-service
+          name: {{ .Release.Name }}-wellknown-service
           namespace: "{{ .Values.namespace }}"
           port: 80
-  tls:
-    secretName: "wildcard-{{ .Values.domain | replace "." "-" }}-tls"
+  tls: {}

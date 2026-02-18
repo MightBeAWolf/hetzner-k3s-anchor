@@ -1,0 +1,171 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-synapse-deployment
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Chart.Name }}-synapse
+spec:
+  replicas: {{ .Values.synapse.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-synapse
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        app: {{ .Chart.Name }}-synapse
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: {{ .Chart.Name }}-synapse
+          image: "{{ .Values.synapse.image.repository }}:{{ .Values.synapse.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.synapse.service.port }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: synapse-data-dir
+              mountPath: /data  # This makes the /data directory writable
+            - name: synapse-config-volume
+              mountPath: /data/homeserver.yaml
+              subPath: homeserver.yaml
+              readOnly: true
+            - name: synapse-config-volume
+              mountPath: /data/matrix.{{ .Values.domain }}.log.config
+              subPath: matrix.{{ .Values.domain }}.log.config
+              readOnly: true
+            - name: synapse-secrets-volume 
+              mountPath: /data/matrix.{{ .Values.domain }}.signing.key
+              subPath: matrix.{{ .Values.domain }}.signing.key
+              readOnly: true
+          env:
+            - name: SYNAPSE_REGISTRATION_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-secrets
+                  key: registration_shared_secret
+            - name: SYNAPSE_MACAROON_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-secrets
+                  key: macaroon_secret_key
+            - name: SYNAPSE_FORM_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-secrets
+                  key: form_secret
+      volumes:
+        - name: synapse-data-dir
+          emptyDir: {}  # This creates a temporary writable directory
+        - name: synapse-config-volume
+          configMap:
+            name: {{ .Release.Name }}-synapse-configmap
+        - name: synapse-secrets-volume
+          secret:
+            secretName: {{ .Release.Name }}-synapse-secrets
+            items:
+              - key: signing_key
+                path: matrix.{{ .Values.domain }}.signing.key
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-synapse-configmap
+  namespace: {{ .Values.namespace }}
+data:
+  homeserver.yaml: |
+    # For more information on how to configure Synapse, including a complete accounting of
+    # each option, go to docs/usage/configuration/config_documentation.md or
+    # https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html
+    server_name: "matrix.{{ .Values.domain }}"
+    pid_file: /data/homeserver.pid
+    listeners:
+      - port: 8008
+        resources:
+        - compress: false
+          names:
+          - client
+          - federation
+        tls: false
+        type: http
+        x_forwarded: true
+    database:
+      name: sqlite3
+      args:
+        database: /data/homeserver.db
+    log_config: "/data/matrix.{{ .Values.domain }}.log.config"
+    media_store_path: /data/media_store
+    registration_shared_secret: "${SYNAPSE_REGISTRATION_SHARED_SECRET}"
+    report_stats: false
+    macaroon_secret_key: "${SYNAPSE_MACAROON_SECRET_KEY}"
+    form_secret: "${SYNAPSE_FORM_SECRET}"
+    signing_key_path: "/data/matrix.{{ .Values.domain }}.signing.key"
+    trusted_key_servers:
+      - server_name: "matrix.org"
+
+
+  matrix.{{ .Values.domain }}.log.config: |
+    version: 1
+    formatters:
+      precise:
+        format: '%(asctime)s - %(name)s - %(lineno)d - %(levelname)s - %(request)s - %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: precise
+    loggers:
+        # This is just here so we can leave `loggers` in the config regardless of whether
+        # we configure other loggers below (avoid empty yaml dict error).
+        _placeholder:
+            level: "INFO"
+        synapse.storage.SQL:
+            # beware: increasing this to DEBUG will make synapse log sensitive
+            # information such as access tokens.
+            level: INFO
+    root:
+        level: INFO
+        handlers: [console]
+    disable_existing_loggers: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-synapse-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+      app: {{ .Chart.Name }}-synapse
+  ports:
+    - port: 80
+      targetPort: 8008
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Release.Name }}-synapse-ingressroute
+  namespace: "{{ .Values.namespace }}"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: "Host(`matrix.{{ .Values.domain }}`)"
+      services:
+        - kind: Service
+          name: {{ .Release.Name }}-synapse-service
+          namespace: "{{ .Values.namespace }}"
+          port: 80
+          scheme: http
+  tls: {}

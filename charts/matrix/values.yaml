@@ -1,5 +1,16 @@
 namespace: matrix
-domain: matrix.twobitrobit.com
+domain: twobitrobit.com
+synapse:
+  onepassword:
+    vaultId: "Anchor Kubernetes"
+    itemId: "SynapseServerSecrets"
+  replicaCount: 1
+  image:
+    repository: docker.io/matrixdotorg/synapse
+    tag: latest
+  service:
+    type: ClusterIP
+    port: 8008
 wellKnown:
   replicaCount: 1
   image:
