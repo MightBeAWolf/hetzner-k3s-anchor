@@ -64,6 +64,31 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-synapse-secrets
                   key: form_secret
+            - name: SYNAPSE_SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-smtp-secrets
+                  key: username
+            - name: SYNAPSE_SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-smtp-secrets
+                  key: credential
+            - name: SYNAPSE_SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-smtp-secrets
+                  key: hostname
+            - name: SYNAPSE_SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-smtp-secrets
+                  key: port
+            - name: SYNAPSE_SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-synapse-smtp-secrets
+                  key: from
       volumes:
         - name: synapse-data-dir
           emptyDir: {}  # This creates a temporary writable directory
@@ -103,6 +128,18 @@ data:
       name: sqlite3
       args:
         database: /data/homeserver.db
+    email:
+      smtp_host: "${SYNAPSE_SMTP_HOST}"
+      smtp_port: "${SYNAPSE_SMTP_PORT}"
+      smtp_user: "${SYNAPSE_SMTP_USER}"
+      smtp_pass: "${SYNAPSE_SMTP_PASS}"
+      enable_tls: true
+      # Defines the “From” address to use when sending emails
+      notif_from: "${SYNAPSE_SMTP_FROM}"
+      # Set to false to disable automatic subscription to email notifications
+      # for new users. Defaults to true.
+      notif_for_new_user: false
+      
     log_config: "/data/matrix.{{ .Values.domain }}.log.config"
     media_store_path: /data/media_store
     registration_shared_secret: "${SYNAPSE_REGISTRATION_SHARED_SECRET}"

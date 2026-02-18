@@ -4,6 +4,7 @@ synapse:
   onepassword:
     vaultId: "Anchor Kubernetes"
     itemId: "SynapseServerSecrets"
+    smtpItemId: "Anchor SMTP Resend.com API Credentials"
   replicaCount: 1
   image:
     repository: docker.io/matrixdotorg/synapse

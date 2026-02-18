@@ -33,10 +33,10 @@ AUTHENTIK_BOOTSTRAP_EMAIL = "op://Private/s4edwscvjopbjvcr44ri6iws74/username"
 AUTHENTIK_BOOTSTRAP_PASSWORD = "op://Private/s4edwscvjopbjvcr44ri6iws74/password"
 
 # SMTP Configuration (Resend.com)
-AUTHENTIK_SMTP_HOST = "op://Private/Anchor SMTP Resend.com API Credentials/hostname"
-AUTHENTIK_SMTP_PORT = "op://Private/Anchor SMTP Resend.com API Credentials/port"
-AUTHENTIK_SMTP_USERNAME = "op://Private/Anchor SMTP Resend.com API Credentials/username"
-AUTHENTIK_SMTP_PASSWORD = "op://Private/Anchor SMTP Resend.com API Credentials/credential"
+AUTHENTIK_SMTP_HOST = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/hostname"
+AUTHENTIK_SMTP_PORT = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/port"
+AUTHENTIK_SMTP_USERNAME = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/username"
+AUTHENTIK_SMTP_PASSWORD = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/credential"
 
 NTFY_M2M_SECRET="op://Private/g62p55ou2jprzjawtkdracvngm/password"
 
