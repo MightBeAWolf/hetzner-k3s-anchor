@@ -36,11 +36,11 @@
         wait: true
         values:
           connect:
-            credentials_base64: "{{ lookup('env', '1PASSWORD_CONNECT_JWT') | b64encode }}"
+            credentials_base64: "{{ lookup('env', 'OP_CONNECT_JWT') | b64encode }}"
           operator:
             create: true
             token:
-              value: "{{ lookup('env', '1PASSWORD_OPERATOR_TOKEN') | string }}"
+              value: "{{ lookup('env', 'OP_OPERATOR_TOKEN') | string }}"
 
 - name: Post-deployment summary
   hosts: localhost

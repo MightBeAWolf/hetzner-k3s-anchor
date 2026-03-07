@@ -1,5 +1,10 @@
 - [?] Have tofu:destroy also destroy resources spawned by k3s calls to Hetzner CSI
 - [ ] Gatus health checks
+    - [ ] Move `values.yaml.j2` from `tasks/` to `templates/` directory
+    - [ ] Replace hardcoded `supersecret` password with 1Password reference
+    - [ ] Add `GATUS_DB_PASSWORD` to `mise.toml` with 1Password path
+    - [ ] Integrate gatus role into platform playbook
+    - [ ] Configure monitoring endpoints
 - [ ] Forgejo
 - [ ] Forgejo Actions
 - [ ] CopyParty
@@ -9,4 +14,7 @@
     - [ ] Confirm the M2M is using the service account (Instead of some global)
 
 - [ ] Switch certs to prod.
+    - [ ] Update ClusterIssuer ACME server URL (staging → production)
+    - [ ] Delete existing staging certificates to trigger re-issuance
     - [ ] Remove AUTHENTIK_INSECURE
+    - [ ] Verify all HTTPS endpoints have valid production certs
