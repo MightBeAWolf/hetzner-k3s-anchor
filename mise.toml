@@ -109,7 +109,7 @@ run = "mise run ssh {{arg(name='index')}}"
 
 [tasks."k:all"]
 description = "List all namespaced Kubernetes resources"
-usage = 'arg "namespace" default="" help="Namespace to query (default: all namespaces)"'
+usage = 'arg "[namespace]" help="Namespace to query (default: all namespaces)"'
 run = '''
 #!/bin/bash
 NS="{{arg(name="namespace")}}"
