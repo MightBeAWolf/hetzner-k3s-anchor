@@ -1,0 +1,82 @@
+---
+# Gatus Helm values with PodSecurity "restricted" compliance
+# Note: Let the chart use its default image tag
+
+# Pod Security Context (required for restricted policy)
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container Security Context (required for restricted policy)
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Environment variables
+env:
+  GATUS_CONFIG_PATH: /config/config.yaml
+  OIDC_CLIENT_ID:
+    valueFrom:
+      secretKeyRef:
+        name: {{ gatus_oidc_secret_name }}
+        key: client_id
+  OIDC_CLIENT_SECRET:
+    valueFrom:
+      secretKeyRef:
+        name: {{ gatus_oidc_secret_name }}
+        key: client_secret
+
+# ConfigMap with Gatus configuration
+config:
+  storage:
+    type: postgres
+    path: >-
+      postgres://{{ gatus_db_user }}:{{ gatus_db_password }}@main-db-rw.database.svc.cluster.local:{{ gatus_db_port }}/{{ gatus_db_name }}?sslmode={{ gatus_db_sslmode }}
+  security:
+    oidc:
+      issuer-url: "{{ gatus_oidc_issuer_url }}"
+      client-id: "${OIDC_CLIENT_ID}"
+      client-secret: "${OIDC_CLIENT_SECRET}"
+      redirect-url: "https://{{ gatus_domain }}/authorization-code/callback"
+      scopes:
+        - openid
+  endpoints:
+    - name: Gatus
+      group: internal
+      url: "https://{{ gatus_domain }}/health"
+      interval: 60s
+      conditions:
+        - "[STATUS] == 200"
+  ui:
+    title: "Gatus - {{ gatus_domain }}"
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+  hosts:
+    - "{{ gatus_domain }}"
+  tls:
+    - secretName: gatus-tls
+      hosts:
+        - "{{ gatus_domain }}"

@@ -1,0 +1,20 @@
+---
+gatus_namespace: "gatus"
+gatus_domain: "gatus.{{ lookup('env', 'TF_VAR_domain') }}"
+gatus_image: "binwiederhier/gatus:v2.11.0"
+
+# Helm Release
+gatus_chart_repo: "https://twin.github.io/helm-charts"
+gatus_chart_version: "1.5.0"
+
+# Database
+gatus_db_user: "gatus_user"
+gatus_db_password: "supersecret"
+gatus_db_name: "gatus_db"
+gatus_db_port: 5432
+gatus_db_sslmode: "require"
+
+# OIDC (Authentik)
+gatus_oidc_client_id: "{{ lookup('env', 'GATUS_OIDC_CLIENT_ID') }}"
+gatus_oidc_issuer_url: "https://auth.{{ lookup('env', 'TF_VAR_domain') }}/application/o/gatus/"
+gatus_oidc_secret_name: "gatus-oidc"

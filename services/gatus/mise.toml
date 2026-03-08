@@ -1,0 +1,11 @@
+[env]
+# OIDC credentials for Authentik integration
+GATUS_OIDC_CLIENT_ID = "op://Anchor Kubernetes/Gatus OIDC Client Secret/client_id"
+
+[tasks.deploy]
+description = "Deploy gatus service"
+run = "mise run //services/gatus/ansible:deploy"
+
+[tasks.uninstall]
+description = "Uninstall gatus service"
+run = "helm uninstall gatus -n gatus"

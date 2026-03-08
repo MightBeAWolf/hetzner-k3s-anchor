@@ -4,26 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is Phase 1 of the Anchor Project - a High-Availability Kubernetes cluster infrastructure provisioning system using OpenTofu and Hetzner Cloud. The project is designed as a polyrepo with isolated state management.
+This is Phase 1 of the Anchor Project - a High-Availability Kubernetes cluster infrastructure provisioning system using OpenTofu and Hetzner Cloud. The project uses a three-layer monorepo architecture.
 
 ## Architecture
 
+### Three-Layer Structure
+```
+/workspace/
+├── infrastructure/          # Layer 1: Cloud provisioning (OpenTofu)
+│   └── tofu/
+├── platform/               # Layer 2: K3s cluster + platform services
+│   ├── ansible/            # Cluster deployment
+│   └── charts/             # Helm charts (cert-manager)
+└── services/               # Layer 3: Application services
+    ├── database/           # CloudNativePG PostgreSQL
+    ├── identity/           # Authentik
+    ├── ntfy/               # Push notifications
+    ├── gatus/              # Status monitoring
+    └── developer-tooling/  # Developer tools
+```
+
 ### Infrastructure Stack
 - **Cloud Provider**: Hetzner Cloud (hel1 region)
-- **Infrastructure as Code**: OpenTofu (in `/tofu/` directory)
-- **Configuration Management**: Ansible (in `/ansible/` directory) with Hetzner Cloud dynamic inventory
+- **Infrastructure as Code**: OpenTofu (in `/infrastructure/tofu/`)
+- **Configuration Management**: Ansible with Hetzner Cloud dynamic inventory
 - **Kubernetes**: 3-node K3s HA cluster with embedded etcd
 - **Cloud Controller**: Hetzner CCM for LoadBalancer services and node lifecycle
+- **CSI Driver**: Hetzner CSI for persistent volumes
 - **HA Endpoint**: Hetzner Load Balancer for K3s API
-- **Security**: Allow-list firewall rules, SSH key authentication via 1Password SSH agent
 - **Secret Management**: 1Password CLI integration via `op run`
 
 ### Resource Design
-- **Networking**: Private network (192.168.0.0/16) with cloud subnet (192.168.1.0/24), labeled `project=anchor`
-- **Compute**: 3x cx23 servers with static private IPs (.2, .3, .4)
-- **Server Labels**: All servers tagged with `project=anchor`, `environment=production`, `role=k3s-node`, and `node_index`
+- **Networking**: Private network (192.168.0.0/16) with cloud subnet (192.168.1.0/24)
+- **Compute**: 3x cx33 servers with static private IPs (.2, .3, .4)
+- **Server Labels**: `project=anchor`, `environment=production`, `role=k3s-node`, `node_index`
 - **HA Setup**: Hetzner Load Balancer fronts K3s API on port 6443
-- **Bootstrap**: cloud-init.yaml configures Debian 12 with modular provisioning scripts
 
 ## Essential Commands
 
@@ -36,232 +51,181 @@ mise run setup
 mise install
 ```
 
-### Infrastructure Operations
+### Infrastructure Operations (Layer 1)
 ```bash
 # Plan changes (always run first)
-mise run tofu:plan
+mise run //infrastructure/tofu:plan
 
 # Deploy infrastructure
-mise run tofu:apply
+mise run //infrastructure/tofu:apply
 
 # Destroy infrastructure
-mise run tofu:destroy
+mise run //infrastructure/tofu:destroy
 
 # Validate configuration
-mise run tofu:validate
+mise run //infrastructure/tofu:validate
 
 # Format code
-mise run tofu:fmt
+mise run //infrastructure/tofu:fmt
 
-# Lint everything
-mise run tofu:lint
+# Lint and validate
+mise run //infrastructure/tofu:check
 
 # Replace all nodes with updated cloud-init configuration
-mise run tofu:replace-nodes
+mise run //infrastructure/tofu:replace-nodes
+
+# Get node IP by index (0, 1, or 2)
+mise run //infrastructure/tofu:ip 0
 ```
 
-### Server Access
+### Platform Operations (Layer 2)
 ```bash
-# Get public IP of specific node (0-2)
-mise run tofu:ip 0  # node-01
-mise run tofu:ip 1  # node-02
-mise run tofu:ip 2  # node-03
+# Deploy K3s cluster with Hetzner integrations
+mise run //platform/ansible:deploy
 
-# SSH into nodes
-ssh "root@$(mise run tofu:ip 0)"
-ssh "root@$(mise run tofu:ip 1)"
-ssh "root@$(mise run tofu:ip 2)"
+# Deploy K3s cluster only (no integrations)
+mise run //platform/ansible:deploy:cluster
+
+# Test connectivity
+mise run //platform/ansible:ping
+
+# List inventory
+mise run //platform/ansible:inventory
+
+# Update SSH known_hosts
+mise run //platform/ansible:update-known-hosts
+
+# Uninstall K3s
+mise run //platform/ansible:uninstall
+
+# Deploy cert-manager
+mise run //platform/charts/cert-manager:apply
+
+# Check cert-manager status
+mise run //platform/charts/cert-manager:status
 ```
 
-### Infrastructure Outputs
+### Service Operations (Layer 3)
 ```bash
-# Get all node public IPs
-op run -- tofu -chdir=tofu output node_public_ips
-
-# Get all node private IPs
-op run -- tofu -chdir=tofu output node_private_ips
-
-# Get Load Balancer IP (control plane endpoint)
-op run -- tofu -chdir=tofu output load_balancer_ip
-
-# Get node names
-op run -- tofu -chdir=tofu output node_names
+# Deploy individual services
+mise run //services/database:deploy
+mise run //services/identity:deploy
+mise run //services/ntfy:deploy
+mise run //services/gatus:deploy
+mise run //services/developer-tooling:deploy
 ```
 
 ### Full Stack Deployment
 ```bash
 # Deploy everything with a single 1Password prompt
-mise run deploy:full
+mise run deploy
 ```
 
-This runs: tofu apply → K3s cluster → Hetzner integrations → cert-manager → platform → developer tools
+This runs: infrastructure -> K3s cluster -> Hetzner integrations -> cert-manager -> all services
 
-### Ansible Operations
+### SSH Access
 ```bash
-# View dynamic inventory from Hetzner Cloud
-mise run ansible:inventory
+# SSH into first node (default)
+mise run ssh
 
-# Test connectivity to all hosts
-mise run ansible:ping
-
-# Update SSH known_hosts with current server fingerprints
-mise run ansible:update-known-hosts
-
-# Deploy complete K3s infrastructure (cluster + Hetzner integrations + cert-manager)
-mise run ansible:deploy-k3s
-
-# Deploy individual infrastructure components
-mise run ansible:deploy-cluster       # K3s HA cluster only
-mise run ansible:deploy-hcloud        # Hetzner CCM + CSI only
-mise run ansible:deploy-cert-manager  # cert-manager only
-
-# Deploy platform services
-mise run ansible:deploy-platform      # Database (CloudNativePG)
-
-# Run a specific playbook
-mise run ansible:run playbooks/infrastructure/k3s-cluster.yml
+# SSH into specific node (0, 1, or 2)
+mise run ssh 1
+mise run ssh:k3s 2
 ```
 
-### Development Workflow
+### Validation
 ```bash
-# Format and validate
-mise run tofu:lint
+# Run all checks across all layers
+mise run check
 
-# Run pre-commit checks
-pre-commit run --all-files
+# Format all code
+mise run fmt
 ```
 
-### Secret Management
-All commands use `op run --` for 1Password secret injection. Secrets are configured in `mise.toml`:
-- `HCLOUD_TOKEN`: Hetzner Cloud API token (used by both OpenTofu and Ansible)
-- `TF_VAR_hcloud_token`: References `$HCLOUD_TOKEN` for OpenTofu
-- `TF_VAR_ssh_key_name`: Name of SSH key in Hetzner Cloud
-- `K3S_TOKEN`: K3s cluster token for node authentication
-- `K3S_ETCD_SECRET`: AES-CBC encryption key for etcd secrets (generated with `head -c 32 /dev/urandom | base64`)
+## Task Mapping (Old -> New)
 
-SSH authentication uses the 1Password SSH agent (no private key file needed).
+| Old Command | New Command |
+|-------------|-------------|
+| `mise run tofu:plan` | `mise run //infrastructure/tofu:plan` |
+| `mise run tofu:apply` | `mise run //infrastructure/tofu:apply` |
+| `mise run tofu:destroy` | `mise run //infrastructure/tofu:destroy` |
+| `mise run tofu:ip 0` | `mise run //infrastructure/tofu:ip 0` |
+| `mise run ansible:deploy-k3s` | `mise run //platform/ansible:deploy` |
+| `mise run ansible:deploy-cluster` | `mise run //platform/ansible:deploy:cluster` |
+| `mise run ansible:deploy-cert-manager` | `mise run //platform/charts/cert-manager:apply` |
+| `mise run ansible:ping` | `mise run //platform/ansible:ping` |
+| `mise run deploy:full` | `mise run deploy` |
 
 ## Critical Implementation Details
 
-### Cloud-Init Provisioning Architecture
-The bootstrap process uses a modular script architecture in `/tofu/files/provision.d/`:
-- **01-configure-idle-timeout.sh**: Sets TMOUT for automatic logout
-- **02-configure-firewall.sh**: Configures firewalld zones and rules
-- **03-configure-fail2ban.sh**: Sets up fail2ban with systemd journal integration
-- **10-install-bat.sh**: Installs bat (better cat)
-- **11-install-fzf.sh**: Installs fzf fuzzy finder
-- **12-install-git-delta.sh**: Installs git-delta for better diffs
-- **13-install-helix.sh**: Installs Helix editor
-- **14-install-starship.sh**: Installs Starship prompt
-- **15-setup-root-user.sh**: Configures root user environment
-- **20-configure-automatic-updates.sh**: Sets up unattended-upgrades
-- **21-configure-disk-cleanup.sh**: Configures automatic disk cleanup
-- **22-configure-log-rotation.sh**: Sets up log rotation policies
-- **30-setup-services.sh**: Enables and starts system services
+### K3s Auto-Deploy Manifests
+The Hetzner CCM and CSI are deployed via K3s auto-deploy manifests (templated before K3s starts):
+- **CCM**: `/var/lib/rancher/k3s/server/manifests/hcloud-ccm.yaml`
+- **CSI**: `/var/lib/rancher/k3s/server/manifests/hcloud-csi.yaml`
 
-Scripts are executed in sorted order (01, 02, 03... 30). The cloud-init.yaml template dynamically includes all `.sh` files using Terraform's `fileset()` function.
+Templates are in `platform/ansible/playbooks/templates/`.
 
-**Important**: Changes to cloud-init.yaml or provisioning scripts only apply to newly created servers. Use `mise run tofu:replace-nodes` to recreate all nodes with updated configuration.
+### Deployment Flow
+```
+infrastructure/tofu:apply
+    -> Creates Hetzner servers, network, firewall, load balancer
+    -> cloud-init provisions base system
 
-### Outputs Handling
-The `node_private_ips` output uses a for-expression with `tolist()` because the `network` attribute is a set, not a list:
-```hcl
-value = [for server in hcloud_server.k3s_nodes : tolist(server.network)[0].ip]
+platform/ansible:deploy
+    -> Templates CCM/CSI manifests BEFORE K3s starts
+    -> Installs K3s on all nodes (init + join)
+    -> K3s auto-applies CCM/CSI manifests
+    -> Deploys 1Password Connect
+
+platform/charts/cert-manager:apply
+    -> Deploys cert-manager via HelmChart CRD
+    -> Configures ClusterIssuers for Let's Encrypt
+    -> Creates wildcard certificate
+
+services/*:deploy
+    -> Deploys individual services
 ```
 
+### Secrets Scoping
+Secrets are organized by layer:
+- **Root**: Shared secrets (HCLOUD_TOKEN, Cloudflare config, domain)
+- **platform/ansible**: K3S_TOKEN, K3S_ETCD_SECRET, 1Password Connect
+- **platform/charts/cert-manager**: CERT_MANAGER_EMAIL, CLOUDFLARE_API_TOKEN
+- **services/identity**: Authentik secrets, SMTP config
+- **services/ntfy**: NTFY_M2M_SECRET
+
+### Cloud-Init Provisioning Architecture
+The bootstrap process uses a modular script architecture in `/infrastructure/tofu/files/provision.d/`:
+- Scripts are executed in sorted order (01, 02, 03... 30)
+- Changes to cloud-init only apply to newly created servers
+- Use `mise run //infrastructure/tofu:replace-nodes` to recreate all nodes
+
 ### State Isolation
-- All OpenTofu files are in `/tofu/` directory
-- Use `dir = "tofu"` in mise tasks for proper working directory
-- This enables polyrepo architecture with independent state management
+- All OpenTofu files are in `/infrastructure/tofu/`
+- Ansible shared inventory in `/platform/ansible/inventory/`
+- Services use symlinks to shared inventory
 
 ### Security Constraints
 - Admin access restricted to `73.97.54.81/32`
 - HTTP/HTTPS ports (80/443) only accessible from admin IP and private network
 - SSH hardened with password authentication disabled
-- Google Authenticator 2FA configuration deferred for manual setup
 
 ### Firewall Architecture
 **Two-layer security model**:
-1. **Hetzner Cloud Firewall** (hcloud_firewall.k3s_firewall):
-   - SSH (22): Admin IP only
-   - K8s API (6443): Admin IP only
-   - HTTP/HTTPS (80/443): Admin IP + private network (192.168.0.0/16)
-   - Internal: Full TCP/UDP/ICMP within private network
-2. **Per-node firewalld** (configured via provision script 02-configure-firewall.sh):
-   - Additional host-level protection
-   - Configured during cloud-init bootstrap
+1. **Hetzner Cloud Firewall**: External traffic filtering
+2. **Per-node firewalld**: Host-level protection (via cloud-init)
 
-### Ansible Architecture
-- **Dynamic Inventory**: Uses `hetzner.hcloud` collection to query Hetzner Cloud API directly
-- **Server Discovery**: Filters servers by labels (`project=anchor`, `role=k3s-node`)
-- **Fact Caching**: Caches facts to `/tmp/ansible_facts` for 1 hour (cleared on `tofu:apply` and `tofu:replace-nodes`)
-- **SSH Authentication**: Uses 1Password SSH agent (no private key files)
-- **SSH Known Hosts**: Automatically updated by OpenTofu via `null_resource` provisioner when servers change
-- **Configuration**: All settings in `ansible/ansible.cfg`, global variables in `ansible/inventory/group_vars/all.yml`
-
-**Inventory groups created automatically**:
-- `k3s_nodes`: All nodes with role=k3s-node
-- `production`: All nodes with environment=production
-- `anchor`: All nodes with project=anchor
-- `type_cx23`: Grouped by server type
-- `status_running`: Grouped by status
-
-### Ansible Role-Based Infrastructure
-The infrastructure deployment uses a modular role-based architecture:
-
-**Playbook Structure**:
-```
-ansible/playbooks/
-├── 01-infrastructure.yml              # Orchestrator (imports sub-playbooks)
-├── 02-platform.yml                    # Platform services (database)
-├── infrastructure/
-│   ├── k3s-cluster.yml               # K3s HA cluster (can run standalone)
-│   ├── hcloud-integrations.yml       # Hetzner CCM + CSI (can run standalone)
-│   └── cert-manager.yml              # TLS certificates (can run standalone)
-└── maintenance/
-    ├── ping.yml                      # Connectivity test
-    ├── uninstall-k3s.yml             # Cluster teardown
-    └── update-known-hosts.yml        # SSH key management
-```
-
-**Infrastructure Roles** (`ansible/roles/infrastructure/`):
-- `hcloud_facts` - Fetches Load Balancer IP and network name from Hetzner API
-- `k3s_server` - K3s installation with CIS hardening (handles init + join)
-- `k3s_kubeconfig` - Retrieves and saves kubeconfig locally
-- `hcloud_ccm` - Hetzner Cloud Controller Manager deployment
-- `hcloud_csi` - Hetzner CSI Driver for persistent volumes
-- `cert_manager` - cert-manager with Let's Encrypt and Cloudflare DNS-01
-
-**Platform Roles** (`ansible/roles/platform/`):
-- `database` - CloudNativePG PostgreSQL cluster
-
-**System Roles** (`ansible/roles/system/`):
-- `helm` - Helm installation
+### Ansible Inventory
+- **Dynamic Inventory**: Uses `hetzner.hcloud` collection
+- **Server Discovery**: Filters by labels (`project=anchor`, `role=k3s-node`)
+- **Fact Caching**: 1 hour in `/tmp/ansible_facts`
+- **Service Symlinks**: Services link to `platform/ansible/inventory/`
 
 ### K3s etcd Encryption
 The cluster implements encryption-at-rest for Kubernetes secrets in etcd using AES-CBC encryption:
 - **Encryption Key**: Managed via `K3S_ETCD_SECRET` environment variable in 1Password
-- **Configuration**: Template at `ansible/roles/infrastructure/k3s_server/templates/etcd-encryption-config.yml.j2`
-- **Deployment Location**: `/var/lib/rancher/k3s/server/cred/encryption-config.yml` (mode 0600)
+- **Configuration**: Template at `platform/ansible/roles/k3s_server/templates/etcd-encryption-config.yml.j2`
 - **K3s Integration**: Applied via `--kube-apiserver-arg=encryption-provider-config` flag
-- **Resources Encrypted**: All Kubernetes Secret resources
-- **Fallback**: Identity provider for backward compatibility with unencrypted data
-
-The encryption configuration is deployed during K3s installation on all server nodes. The directory `/var/lib/rancher/k3s/server/cred/` is created with mode 0700 for secure storage.
-
-### Hetzner Cloud Controller Manager (CCM)
-The cluster uses Hetzner CCM for cloud provider integration:
-- **Deployment**: Applied via `kubectl apply` from a single node (not auto-deploy manifests)
-- **Location**: Configured via `HCLOUD_LOAD_BALANCERS_LOCATION` environment variable
-- **Features**: Node lifecycle management, LoadBalancer service provisioning, route management
-- **Network Discovery**: Uses label selector `project=anchor` to find the Hetzner network
-- **Role**: `ansible/roles/infrastructure/hcloud_ccm/`
-- **Templates**:
-  - `secret.yaml.j2` - API token and network name
-  - `deployment.yaml.j2` - ServiceAccount, RBAC, and Deployment
-
-### Phase Scope
-Phases 1 and 2 are complete. Infrastructure provisioning and K3s cluster with CCM are operational.
 
 ## Tool Requirements
 
@@ -269,20 +233,21 @@ Always run `mise install` before working. The project uses:
 - OpenTofu (latest)
 - pre-commit (3.8.0)
 - 1Password CLI (for secret management)
+- kubeconform (K8s manifest validation)
+- kube-linter (K8s security scanning)
 
 ## Validation Commands
 
 After any changes, run:
-1. `mise run tofu:lint` - formats and validates
-2. `mise run tofu:plan` - verify infrastructure changes
-3. `pre-commit run --all-files` - code quality checks
-4. `mise run ansible:ping` - verify Ansible connectivity (after infrastructure is deployed)
+1. `mise run check` - runs all validators across all layers
+2. `mise run //infrastructure/tofu:plan` - verify infrastructure changes
+3. `mise run //platform/ansible:ping` - verify Ansible connectivity
 
 ## Pre-commit Hooks
 
-The project uses pre-commit for code quality. Hooks include:
-- **Standard checks**: trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files, check-merge-conflict
-- **Terraform/OpenTofu**: terraform_fmt, terraform_validate, terraform_tflint (with extensive rule set)
+The project uses pre-commit for code quality:
+- **Standard checks**: trailing-whitespace, end-of-file-fixer, check-yaml, check-added-large-files
+- **Terraform/OpenTofu**: terraform_fmt, terraform_validate, terraform_tflint
 - **YAML linting**: yamllint with custom configuration (.yamllint.yaml)
 
-Install hooks with `pre-commit install` (optional, runs automatically in CI)
+Install hooks with `pre-commit install`

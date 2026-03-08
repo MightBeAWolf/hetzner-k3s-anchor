@@ -1,44 +1,25 @@
 experimental_monorepo_root = true
 
-[env]
-MISE_EXPERIMENTAL=1
-HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
-TF_VAR_hcloud_token = "{{ env.HCLOUD_TOKEN }}"
-TF_VAR_ssh_key_name = "op://Private/6agth7vqswxvzx7lwmjqyzm25y/name"
-K3S_TOKEN = "op://Private/Anchor-K3s-Cluster/credential"
-# Created with `head -c 32 /dev/urandom | base64`
-K3S_ETCD_SECRET = "op://Private/Anchor-K3s-Cluster/etcd_secret"
-KUBECONFIG = "{{ config_root }}/kubeconfig"
+[monorepo]
+config_roots = [
+    "infrastructure/*",
+    "platform/*",
+    "platform/charts/*",
+    "services/*",
+    "services/*/ansible",
+]
 
-# Cloudflare Configuration
+[env]
+MISE_EXPERIMENTAL = 1
+# Shared secrets - layer-specific secrets are in their respective mise.toml files
+HCLOUD_TOKEN = "op://Private/quacttvsaylcxc3lhcvta7l2oy/password"
+KUBECONFIG = "{{ config_root }}/kubeconfig"
 TF_VAR_cloudflare_api_token = "op://Private/Anchor Cloudflare Config/credential"
 TF_VAR_cloudflare_zone_id = "op://Private/Anchor Cloudflare Config/zone_id"
 TF_VAR_domain = "op://Private/Anchor Cloudflare Config/domain"
 TF_VAR_server_type = "cx33"
-
-OP_CONNECT_JWT = "op://Anchor Kubernetes/Anchor 1Password Connect Server Credentials File/1password-credentials.json"
-OP_OPERATOR_TOKEN = "op://Anchor Kubernetes/Anchor 1Password Token Kubernetes Operator/credential"
-
-# cert-manager Configuration
-CERT_MANAGER_EMAIL = "op://Private/Anchor Cloudflare Config/email"
-
-# Ansible Configuration
-ANSIBLE_CONFIG = "{{ config_root }}/ansible/ansible.cfg"
+DOMAIN = "{{ env.TF_VAR_domain }}"
 ANSIBLE_FORCE_COLOR = "1"
-
-# Authentik Secrets
-AUTHENTIK_SECRET_KEY = "op://Private/Anchor Authentik Secrets/secret_key"
-AUTHENTIK_DB_PASSWORD = "op://Private/Anchor Authentik Secrets/db_password"
-AUTHENTIK_BOOTSTRAP_EMAIL = "op://Private/s4edwscvjopbjvcr44ri6iws74/username"
-AUTHENTIK_BOOTSTRAP_PASSWORD = "op://Private/s4edwscvjopbjvcr44ri6iws74/password"
-
-# SMTP Configuration (Resend.com)
-AUTHENTIK_SMTP_HOST = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/hostname"
-AUTHENTIK_SMTP_PORT = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/port"
-AUTHENTIK_SMTP_USERNAME = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/username"
-AUTHENTIK_SMTP_PASSWORD = "op://Anchor Kubernetes/Anchor SMTP Resend.com API Credentials/credential"
-
-NTFY_M2M_SECRET="op://Private/g62p55ou2jprzjawtkdracvngm/password"
 
 [tools]
 "opentofu" = "latest"
@@ -46,163 +27,96 @@ NTFY_M2M_SECRET="op://Private/g62p55ou2jprzjawtkdracvngm/password"
 "pipx" = "latest"
 "uv" = "latest"
 "pipx:ansible-core" = { version = "latest", uvx_args = "--with requests --with hcloud" }
+"pipx:ansible-lint" = "latest"
 "kubectl" = "latest"
 "yamllint" = "latest"
-"hcloud" = "latest"  # Required for K3s resource cleanup on destroy
+"hcloud" = "latest"
 "helm" = "3.14.4"
 "helm-diff" = "latest"
+"kubeconform" = "latest"
+"kube-linter" = "latest"
 
-# Setup tasks
 [tasks.setup]
 description = "Setup project dependencies and initialize"
 run = [
   "mise install",
-  "mise run tofu:init",
-  "mise run ansible:setup"
+  "mise run //infrastructure/tofu:init",
+  "mise run //platform/ansible:init",
 ]
 
-# OpenTofu tasks
-[tasks."tofu:init"]
-description = "Initialize OpenTofu configuration"
-dir = "tofu"
-run = "op run -- tofu init"
-
-[tasks."tofu:plan"]
-description = "Plan OpenTofu infrastructure changes"
-dir = "tofu"
-run = "op run -- tofu plan"
-
-[tasks."tofu:apply"]
-description = "Apply OpenTofu infrastructure changes"
-dir = "tofu"
+[tasks.check]
+description = "Run all validation checks across the project"
 run = [
-  "rm -rf /tmp/ansible_facts",
-  "op run -- tofu apply"
+  "yamllint -c .yamllint.yaml infrastructure/ platform/ services/",
+  "mise run //infrastructure/tofu:check",
+  "mise run //platform/ansible:lint",
+  "mise run //platform/charts/cert-manager:check",
+  "mise run //services/database/ansible:lint",
+  "mise run //services/identity/ansible:lint",
+  "mise run //services/ntfy/ansible:lint",
+  "mise run //services/gatus/ansible:lint",
+  "mise run //services/developer-tooling/ansible:lint",
 ]
 
-[tasks."tofu:destroy"]
-description = "Destroy OpenTofu infrastructure"
-dir = "tofu"
-run = "op run -- tofu destroy"
-
-[tasks."tofu:validate"]
-description = "Validate OpenTofu configuration"
-dir = "tofu"
-run = "op run -- tofu validate"
-
-[tasks."tofu:fmt"]
-description = "Format OpenTofu files"
-dir = "tofu"
-run = "tofu fmt"
-
-[tasks."tofu:lint"]
-description = "Lint and format all code"
-dir = "tofu"
+[tasks.fmt]
+description = "Auto-format all project files"
 run = [
-  "tofu fmt",
-  "op run -- tofu validate"
+  "mise run //infrastructure/tofu:fmt"
 ]
 
-[tasks."tofu:ip"]
-description = "Get public IP of specific node"
-usage = 'arg "<node_index>" help="Node index (0-2)" default="0"'
-dir = "tofu"
-run = 'tofu output -json node_public_ips | jq -r ".[${usage_node_index}]"'
-
-[tasks."tofu:replace-nodes"]
-description = "Replace all nodes with updated cloud-init configuration"
-dir = "tofu"
-run = [
-  "rm -rf /tmp/ansible_facts",
-  """
-  op run -- tofu apply \
-    -replace=hcloud_server.k3s_nodes[0] \
-    -replace=hcloud_server.k3s_nodes[1] \
-    -replace=hcloud_server.k3s_nodes[2]
-  """
-]
-
-# Ansible tasks
-[tasks."ansible:setup"]
-description = "Install Ansible collections and dependencies"
-dir = "ansible"
-run = "ansible-galaxy install -r requirements.yml"
-
-[tasks."ansible:inventory"]
-description = "List Ansible inventory from Hetzner Cloud"
-dir = "ansible"
-run = "op run -- ansible-inventory --list"
-
-[tasks."ansible:ping"]
-description = "Test Ansible connectivity to all hosts"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/maintenance/ping.yml"
-
-[tasks."ansible:update-known-hosts"]
-description = "Update SSH known_hosts with current server fingerprints"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/maintenance/update-known-hosts.yml"
-
-[tasks."ansible:run"]
-description = "Run an Ansible playbook"
-usage = 'arg "<playbook>" help="Path to playbook (e.g., playbooks/maintenance/ping.yml)"'
-dir = "ansible"
-run = "op run -- ansible-playbook ${usage_playbook}"
-
-# Infrastructure deployment (full stack)
-[tasks."ansible:deploy-k3s"]
-description = "Deploy complete K3s infrastructure (cluster + integrations + cert-manager)"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/01-infrastructure.yml"
-
-# Infrastructure components (can run individually)
-[tasks."ansible:deploy-cluster"]
-description = "Deploy K3s HA cluster only"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/infrastructure/k3s-cluster.yml"
-
-[tasks."ansible:deploy-hcloud"]
-description = "Deploy Hetzner Cloud integrations (CCM + CSI)"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/infrastructure/hcloud-integrations.yml"
-
-[tasks."ansible:deploy-cert-manager"]
-description = "Deploy cert-manager with Let's Encrypt"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/infrastructure/cert-manager.yml"
-
-# Platform deployment
-[tasks."ansible:deploy-platform"]
-description = "Deploy platform services (database/identity)"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/02-platform.yml"
-
-[tasks."ansible:uninstall-k3s"]
-description = "Uninstall K3s from all nodes"
-dir = "ansible"
-run = "op run -- ansible-playbook playbooks/maintenance/uninstall-k3s.yml"
-
-# Full stack deployment
-[tasks."deploy:full"]
-description = "Deploy full stack: infrastructure + K3s + platform + developer tools"
-run = """
+[tasks.deploy]
+description = "Deploy full stack: infrastructure + K3s + platform + services"
+run = '''
 op run -- bash -c '
   set -e
   echo "==> Clearing Ansible fact cache..."
   rm -rf /tmp/ansible_facts
 
   echo "==> Deploying infrastructure with OpenTofu..."
-  tofu -chdir=tofu apply -auto-approve
+  mise run //infrastructure/tofu:apply -auto-approve
 
-  echo "==> Deploying K3s cluster + Hetzner integrations + cert-manager..."
-  ansible-playbook ansible/playbooks/01-infrastructure.yml
+  echo "==> Deploying K3s cluster + Hetzner integrations..."
+  mise run //platform/ansible:deploy
 
-  echo "==> Deploying platform services (database)..."
-  ansible-playbook ansible/playbooks/02-platform.yml
+  echo "==> Deploying cert-manager..."
+  mise run //platform/charts/cert-manager:apply
 
-  echo "==> Deploying developer tooling..."
-  ansible-playbook ansible/playbooks/developer_tooling.yml
+  echo "==> Deploying services..."
+  mise run //services/database:deploy
+  mise run //services/identity:deploy
+  mise run //services/ntfy:deploy
+  mise run //services/gatus:deploy
+  mise run //services/developer-tooling:deploy
 
   echo "==> Full stack deployment complete!"
 '
-"""
+'''
+
+[tasks.ssh]
+description = "SSH into a K3s node"
+usage = 'arg "index" default="0" help="Node index (0, 1, or 2)"'
+run = '''
+#!/bin/bash
+INDEX={{arg(name="index")}}
+IP=$(mise run -q //infrastructure/tofu:output:json | jq -r ".node_public_ips.value[$INDEX]")
+exec ssh "root@$IP"
+'''
+
+[tasks."ssh:k3s"]
+description = "SSH into K3s node (alias for ssh)"
+usage = 'arg "index" default="0"'
+run = "mise run ssh {{arg(name='index')}}"
+
+[tasks."k:all"]
+description = "List all namespaced Kubernetes resources"
+usage = 'arg "namespace" default="" help="Namespace to query (default: all namespaces)"'
+run = '''
+#!/bin/bash
+NS="{{arg(name="namespace")}}"
+RESOURCES=$(kubectl api-resources --verbs=list --namespaced -o name | paste -sd "," -)
+if [[ -n "$NS" ]]; then
+  kubectl get "$RESOURCES" -n "$NS" --ignore-not-found
+else
+  kubectl get "$RESOURCES" -A --ignore-not-found
+fi
+'''

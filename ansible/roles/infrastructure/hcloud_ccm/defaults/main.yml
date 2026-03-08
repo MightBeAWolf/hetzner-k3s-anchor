@@ -1,5 +1,0 @@
----
-# Hetzner Cloud Controller Manager defaults
-
-# CCM version is defined in group_vars/all.yml as hcloud_ccm_version
-# hcloud_location is defined in group_vars/all.yml

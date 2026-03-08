@@ -1,0 +1,95 @@
+---
+# DYNAMIC LEADER RESOLUTION
+- name: Get Postgres Read-Write Endpoints
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Endpoints
+    name: "main-db-rw"
+    namespace: "database"
+  register: db_rw_endpoints
+
+- name: Fail if Read-Write Endpoint is empty
+  ansible.builtin.fail:
+    msg: "The main-db-rw service has no active endpoints."
+  when: >
+    db_rw_endpoints.resources | length == 0 or
+    db_rw_endpoints.resources[0].subsets is not defined or
+    db_rw_endpoints.resources[0].subsets | length == 0
+
+- name: Set Fact for Postgres Leader Pod
+  ansible.builtin.set_fact:
+    gatus_db_admin_pod: "{{ db_rw_endpoints.resources[0].subsets[0].addresses[0].targetRef.name }}"
+
+# --- DATABASE PROVISIONING  ---
+
+- name: Check if Gatus User Exists
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ gatus_db_admin_pod }}"
+    command: psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ gatus_db_user }}'"
+  register: user_check
+  changed_when: false
+
+- name: Create Gatus User
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ gatus_db_admin_pod }}"
+    command: >-
+      psql -U postgres -c
+      "CREATE ROLE {{ gatus_db_user }} WITH LOGIN PASSWORD '{{ gatus_db_password | string }}';"
+  when: (user_check.stdout | trim) != '1'
+
+- name: Check if Gatus Database Exists
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ gatus_db_admin_pod }}"
+    command: psql -U postgres -tAc "SELECT 1 FROM pg_database WHERE datname='{{ gatus_db_name }}'"
+  register: db_check
+  changed_when: false
+
+- name: Create Gatus Database
+  kubernetes.core.k8s_exec:
+    namespace: "database"
+    pod: "{{ gatus_db_admin_pod }}"
+    command: psql -U postgres -c "CREATE DATABASE {{ gatus_db_name }} OWNER {{ gatus_db_user }};"
+  when: (db_check.stdout | trim) != '1'
+
+# --- NAMESPACE ---
+
+- name: Ensure gatus namespace exists
+  kubernetes.core.k8s:
+    name: "{{ gatus_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+# --- 1PASSWORD SECRET SYNC ---
+
+- name: Deploy Gatus OIDC Secret (1Password)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: onepassword.com/v1
+      kind: OnePasswordItem
+      metadata:
+        name: "{{ gatus_oidc_secret_name }}"
+        namespace: "{{ gatus_namespace }}"
+      spec:
+        itemPath: "vaults/Anchor Kubernetes/items/Gatus OIDC Client Secret"
+
+# --- HELM DEPLOYMENT ---
+
+- name: Add Gatus Helm Repo
+  kubernetes.core.helm_repository:
+    name: twin
+    repo_url: "{{ gatus_chart_repo }}"
+
+- name: Deploy Gatus
+  kubernetes.core.helm:
+    name: gatus
+    chart_ref: twin/gatus
+    release_namespace: "{{ gatus_namespace }}"
+    chart_version: "{{ gatus_chart_version }}"
+    values: "{{ lookup('template', 'values.yaml.j2') | from_yaml }}"
+    wait: true
+    wait_timeout: "15m"

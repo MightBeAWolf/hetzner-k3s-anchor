@@ -1,0 +1,6 @@
+[env]
+NTFY_M2M_SECRET = "op://Private/g62p55ou2jprzjawtkdracvngm/password"
+
+[tasks.deploy]
+description = "Deploy ntfy service"
+run = "mise run //services/ntfy/ansible:deploy"
