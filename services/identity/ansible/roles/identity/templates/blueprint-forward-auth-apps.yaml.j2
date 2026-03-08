@@ -35,10 +35,28 @@ entries:
   # ============================================================
   # Ntfy M2M (Machine-to-Machine)
   # ============================================================
-  # Create the Service Account (User)
+  # Create RBAC Role for Service Account (2026.2 best practice)
+  # Roles are assigned to groups, which users inherit permissions from
+  - model: authentik_rbac.role
+    state: present
+    identifiers:
+      name: ntfy-m2m-publisher-role
+    attrs:
+      permissions:
+        - authentik_core.view_application
+
+  # Create a group for M2M publishers with the role assigned
+  - model: authentik_core.group
+    state: present
+    identifiers:
+      name: ntfy-m2m-publishers
+    attrs:
+      roles:
+        - !Find [authentik_rbac.role, [name, ntfy-m2m-publisher-role]]
+
+  # Create the service account and add to the publishers group
   - model: authentik_core.user
     state: present
-    id: user-ntfy-m2m
     identifiers:
       username: ntfy-m2m-publisher
     attrs:
@@ -46,7 +64,10 @@ entries:
       path: service-accounts
       type: service_account
       is_active: true
+      groups:
+        - !Find [authentik_core.group, [name, ntfy-m2m-publishers]]
 
+  # Create API token for the service account
   - model: authentik_core.token
     state: present
     identifiers:
@@ -57,6 +78,20 @@ entries:
       intent: api
       expiring: false
       description: Machine-to-machine API token for ntfy publisher
+
+  # Custom scope mapping for ntfy publisher identity (2026.2 claim override)
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      scope_name: ntfy_publisher
+    attrs:
+      name: Ntfy Publisher Scope
+      description: Custom claims for ntfy M2M publisher
+      expression: |
+        return {
+            "ntfy_role": "publisher",
+            "sub": request.user.username,
+        }
 
   # Create the OAuth2 Provider
   - model: authentik_providers_oauth2.oauth2provider
@@ -75,6 +110,7 @@ entries:
         - url: "https://ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
           matching_mode: "strict"
       property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, "ntfy_publisher"]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, "openid"]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, "email"]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, "profile"]]
@@ -104,8 +140,10 @@ entries:
       mode: forward_single
       intercept_header_auth: true
       external_host: "https://ntfy.{{ lookup('env', 'TF_VAR_domain') }}"
+      # 2026.2 fix: explicit verification keypair for JWT signature validation
+      verification_kp: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
       jwt_federation_providers:
-        - !KeyOf ntfy-oath2-provider
+        - !Find [authentik_providers_oauth2.oauth2provider, [name, "Ntfy OAuth2 Provider"]]
 
   - model: authentik_core.application
     state: present
