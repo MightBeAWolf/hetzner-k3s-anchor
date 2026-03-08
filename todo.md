@@ -31,8 +31,3 @@
         - See: https://github.com/goauthentik/authentik/discussions/11764
     - [ ] M2M functionality confirmed on fresh deployment (after Step-CA integration)
     - [ ] M2M confirmed to use service account (instead of global)
-
-- [ ] Switch certs to prod
-    - [x] ClusterIssuer defaults to production (`values.yaml` issuer: production)
-    - [x] Production certs already issued (Let's Encrypt R12 intermediate verified)
-    - [ ] Remove AUTHENTIK_INSECURE from `services/identity/.../values.yaml.j2:40`

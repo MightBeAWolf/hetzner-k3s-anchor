@@ -36,9 +36,6 @@ server:
       value: "{{ lookup('env', 'AUTHENTIK_BOOTSTRAP_PASSWORD') }}"
     - name: AUTHENTIK_HOST
       value: "https://auth.{{ lookup('env', 'TF_VAR_domain') }}"
-    # TODO: Remove when ACME certs are switched from staging to production
-    - name: AUTHENTIK_INSECURE
-      value: "true"
 
   volumes:
     - name: blueprints
