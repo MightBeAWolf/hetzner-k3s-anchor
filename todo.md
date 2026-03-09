@@ -9,7 +9,10 @@
 - [ ] Forgejo Actions
 - [ ] CopyParty
 - [ ] Step-CA
-    - [ ] Deploy Step CA service/pod/etc
+    - [x] Deploy Step CA service/pod/etc
+        - Dual chart pattern: `config/` (secrets) + `crd/` (HelmChart CR)
+        - PKI initialization via `step ca init --helm` in Podman container
+        - Integrated into `mise run check` and `mise run deploy`
     - [ ] Configure cluster for Zero-Trust Internal Ingress to issue
         certificates for internal-only domains that never touch the public internet.
     - [ ] Configure CloudNativePG so Step CA is a ClusterIssuer for CNPG using

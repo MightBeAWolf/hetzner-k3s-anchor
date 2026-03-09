@@ -35,6 +35,7 @@ ANSIBLE_FORCE_COLOR = "1"
 "helm-diff" = "latest"
 "kubeconform" = "latest"
 "kube-linter" = "latest"
+"yq" = "latest"
 
 [tasks.setup]
 description = "Setup project dependencies and initialize"
@@ -51,6 +52,7 @@ run = [
   "mise run //infrastructure/tofu:check",
   "mise run //platform/ansible:lint",
   "mise run //platform/charts/cert-manager:check",
+  "mise run //platform/charts/step-ca:check",
   "mise run //services/database/ansible:lint",
   "mise run //services/identity/ansible:lint",
   "mise run //services/ntfy/ansible:lint",
@@ -80,6 +82,9 @@ op run -- bash -c '
 
   echo "==> Deploying cert-manager..."
   mise run //platform/charts/cert-manager:apply
+
+  echo "==> Deploying step-ca..."
+  mise run //platform/charts/step-ca:apply
 
   echo "==> Deploying services..."
   mise run //services/database:deploy
